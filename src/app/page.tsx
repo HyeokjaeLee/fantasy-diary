@@ -1,18 +1,19 @@
-import React from 'react';
+import { redirect } from 'next/navigation';
+import { headers } from 'next/headers';
 
-export default function Page() {
-  return (
-    <div className="relative size-full">
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
-        className="absolute left-0 top-0 -z-10 h-full w-full object-cover blur-sm"
-      >
-        <source src="/videos/background.webm" type="video/webm" />
-      </video>
-      <article className="size-full bg-black/90">test</article>
-    </div>
-  );
+export default async function RootPage() {
+  // Get the accept-language header
+  const headersList = await headers();
+  const acceptLanguage = headersList.get('accept-language');
+  
+  // Default to Korean
+  let locale = 'ko';
+  
+  // Check if the user prefers English
+  if (acceptLanguage && acceptLanguage.includes('en') && !acceptLanguage.includes('ko')) {
+    locale = 'en';
+  }
+  
+  // Server-side redirect to the appropriate locale
+  redirect(`/${locale}`);
 }
