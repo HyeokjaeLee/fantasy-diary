@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react';
 
 export default function Page() {
   return (
@@ -8,7 +8,7 @@ export default function Page() {
         loop
         muted
         playsInline
-        className="absolute top-0 left-0 w-full h-full object-cover -z-10 blur-sm"
+        className="absolute left-0 top-0 -z-10 h-full w-full object-cover blur-sm"
       >
         <source src="/videos/background.webm" type="video/webm" />
       </video>

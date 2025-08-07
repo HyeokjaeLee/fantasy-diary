@@ -1,0 +1,4 @@
+dist
+bun.lock
+public
+node_modules/
