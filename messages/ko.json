@@ -1,0 +1,15 @@
+{
+  "HomePage": {
+    "title": "판타지 다이어리",
+    "welcome": "환영합니다"
+  },
+  "common": {
+    "home": "홈",
+    "about": "소개",
+    "contact": "연락처",
+    "language": "언어",
+    "loading": "로딩 중...",
+    "error": "오류가 발생했습니다",
+    "retry": "다시 시도"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "HomePage": {
+    "title": "Fantasy Diary",
+    "welcome": "Welcome"
+  },
+  "common": {
+    "home": "Home",
+    "about": "About",
+    "contact": "Contact",
+    "language": "Language",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "retry": "Retry"
+  }
+}
