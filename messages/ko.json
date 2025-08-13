@@ -11,5 +11,59 @@
     "loading": "로딩 중...",
     "error": "오류가 발생했습니다",
     "retry": "다시 시도"
+  },
+  "auth": {
+    "signin": {
+      "title": "로그인",
+      "subtitle": "Fantasy Diary에 오신 것을 환영합니다",
+      "email": "이메일",
+      "password": "비밀번호",
+      "emailPlaceholder": "이메일을 입력하세요",
+      "passwordPlaceholder": "비밀번호를 입력하세요",
+      "signinButton": "이메일로 로그인",
+      "signingIn": "로그인 중...",
+      "googleSignin": "Google로 로그인",
+      "processing": "처리 중...",
+      "or": "또는",
+      "noAccount": "계정이 없으신가요?",
+      "signupLink": "회원가입",
+      "errors": {
+        "google": "Google 로그인에 실패했습니다.",
+        "emailRequired": "이메일과 비밀번호를 입력해주세요.",
+        "signin": "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.",
+        "callback": "인증 처리 중 오류가 발생했습니다."
+      }
+    },
+    "signup": {
+      "title": "회원가입",
+      "subtitle": "Fantasy Diary 계정을 만들어보세요",
+      "email": "이메일",
+      "password": "비밀번호",
+      "confirmPassword": "비밀번호 확인",
+      "emailPlaceholder": "이메일을 입력하세요",
+      "passwordPlaceholder": "비밀번호를 입력하세요 (최소 6자)",
+      "confirmPasswordPlaceholder": "비밀번호를 다시 입력하세요",
+      "signupButton": "회원가입",
+      "processing": "처리 중...",
+      "googleSignup": "Google로 시작하기",
+      "or": "또는",
+      "hasAccount": "이미 계정이 있으신가요?",
+      "signinLink": "로그인",
+      "success": {
+        "title": "회원가입 완료!",
+        "message": "이메일로 인증 링크를 보내드렸습니다.\n이메일을 확인하고 계정을 활성화해주세요.",
+        "goToSignin": "로그인 페이지로 이동"
+      },
+      "errors": {
+        "google": "Google 로그인에 실패했습니다.",
+        "allFields": "모든 필드를 입력해주세요.",
+        "passwordMismatch": "비밀번호가 일치하지 않습니다.",
+        "passwordLength": "비밀번호는 최소 6자 이상이어야 합니다.",
+        "signup": "회원가입에 실패했습니다. 다시 시도해주세요."
+      }
+    },
+    "callback": {
+      "processing": "로그인 처리 중..."
+    }
   }
 }

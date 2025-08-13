@@ -1,13 +1,13 @@
 'use client';
-
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { withParamValidation } from 'next-typesafe-url/app/hoc';
 import React from 'react';
 
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { useAuthContext } from '@/contexts/AuthContext';
 
-export default function Page() {
+function Page() {
   const t = useTranslations('HomePage');
   const { user, loading, signOut } = useAuthContext();
   const router = useRouter();
@@ -22,7 +22,7 @@ export default function Page() {
   const handleSignOut = async () => {
     try {
       await signOut();
-      router.push('/auth/signin');
+      router.push('');
     } catch (error) {
       console.error('로그아웃 에러:', error);
     }
@@ -73,12 +73,12 @@ export default function Page() {
           <h1 className="mb-4 text-4xl font-bold">{t('title')}</h1>
           <p className="mb-4 text-xl">{t('welcome')}</p>
           {user && (
-            <p className="text-sm opacity-80">
-              환영합니다, {user.email}님!
-            </p>
+            <p className="text-sm opacity-80">환영합니다, {user.email}님!</p>
           )}
         </div>
       </article>
     </div>
   );
 }
+
+export default withParamValidation(Page, LayoutRoute);

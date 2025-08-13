@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useLocale, useTranslations } from 'next-intl';
 import { useState } from 'react';
 
 import { useAuthContext } from '@/contexts/AuthContext';
@@ -16,6 +17,8 @@ export default function SignUp() {
   
   const { signInWithGoogle, signUpWithEmail } = useAuthContext();
   const router = useRouter();
+  const t = useTranslations('auth.signup');
+  const locale = useLocale();
 
   const handleGoogleSignIn = async () => {
     try {
@@ -23,7 +26,7 @@ export default function SignUp() {
       setError('');
       await signInWithGoogle();
     } catch (err) {
-      setError('Google 로그인에 실패했습니다.');
+      setError(t('errors.google'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -34,19 +37,19 @@ export default function SignUp() {
     e.preventDefault();
     
     if (!email || !password || !confirmPassword) {
-      setError('모든 필드를 입력해주세요.');
+      setError(t('errors.allFields'));
 
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('비밀번호가 일치하지 않습니다.');
+      setError(t('errors.passwordMismatch'));
 
       return;
     }
 
     if (password.length < 6) {
-      setError('비밀번호는 최소 6자 이상이어야 합니다.');
+      setError(t('errors.passwordLength'));
 
       return;
     }
@@ -57,7 +60,7 @@ export default function SignUp() {
       await signUpWithEmail(email, password);
       setSuccess(true);
     } catch (err) {
-      setError('회원가입에 실패했습니다. 다시 시도해주세요.');
+      setError(t('errors.signup'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -70,18 +73,21 @@ export default function SignUp() {
         <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md text-center">
           <div>
             <h2 className="text-3xl font-bold tracking-tight text-gray-900">
-              회원가입 완료!
+              {t('success.title')}
             </h2>
             <p className="mt-4 text-gray-600">
-              이메일로 인증 링크를 보내드렸습니다.
-              <br />
-              이메일을 확인하고 계정을 활성화해주세요.
+              {t('success.message').split('\n').map((line, index) => (
+                <span key={index}>
+                  {line}
+                  {index === 0 && <br />}
+                </span>
+              ))}
             </p>
             <button
-              onClick={() => router.push('/auth/signin')}
+              onClick={() => router.push(`/${locale}/auth/signin`)}
               className="mt-6 inline-flex justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
             >
-              로그인 페이지로 이동
+              {t('success.goToSignin')}
             </button>
           </div>
         </div>
@@ -94,10 +100,10 @@ export default function SignUp() {
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
         <div>
           <h2 className="text-center text-3xl font-bold tracking-tight text-gray-900">
-            회원가입
+            {t('title')}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Fantasy Diary 계정을 만들어보세요
+            {t('subtitle')}
           </p>
         </div>
 
@@ -110,7 +116,7 @@ export default function SignUp() {
         <form className="space-y-6" onSubmit={handleEmailSignUp}>
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              이메일
+              {t('email')}
             </label>
             <div className="mt-1">
               <input
@@ -122,14 +128,14 @@ export default function SignUp() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                placeholder="이메일을 입력하세요"
+                placeholder={t('emailPlaceholder')}
               />
             </div>
           </div>
 
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              비밀번호
+              {t('password')}
             </label>
             <div className="mt-1">
               <input
@@ -141,14 +147,14 @@ export default function SignUp() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                placeholder="비밀번호를 입력하세요 (최소 6자)"
+                placeholder={t('passwordPlaceholder')}
               />
             </div>
           </div>
 
           <div>
             <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">
-              비밀번호 확인
+              {t('confirmPassword')}
             </label>
             <div className="mt-1">
               <input
@@ -160,7 +166,7 @@ export default function SignUp() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                placeholder="비밀번호를 다시 입력하세요"
+                placeholder={t('confirmPasswordPlaceholder')}
               />
             </div>
           </div>
@@ -171,7 +177,7 @@ export default function SignUp() {
               disabled={loading}
               className="group relative flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-gray-400"
             >
-              {loading ? '처리 중...' : '회원가입'}
+              {loading ? t('processing') : t('signupButton')}
             </button>
           </div>
 
@@ -180,7 +186,7 @@ export default function SignUp() {
               <div className="w-full border-t border-gray-300" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="bg-white px-2 text-gray-500">또는</span>
+              <span className="bg-white px-2 text-gray-500">{t('or')}</span>
             </div>
           </div>
 
@@ -209,19 +215,19 @@ export default function SignUp() {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                 />
               </svg>
-              {loading ? '처리 중...' : 'Google로 시작하기'}
+              {loading ? t('processing') : t('googleSignup')}
             </button>
           </div>
         </form>
 
         <div className="text-center">
           <p className="text-sm text-gray-600">
-            이미 계정이 있으신가요?{' '}
+            {t('hasAccount')}{' '}
             <Link
-              href="/auth/signin"
+              href={`/${locale}/auth/signin`}
               className="font-medium text-indigo-600 hover:text-indigo-500"
             >
-              로그인
+              {t('signinLink')}
             </Link>
           </p>
         </div>

@@ -1,22 +1,12 @@
-import '../globals.css';
+import '@/configs/styles/globals.css';
 
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
 import { notFound } from 'next/navigation';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 
 import { Providers } from '@/components/Providers';
-
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-});
+import { pretendard } from '@/configs/fonts';
 
 export const metadata: Metadata = {
   title: 'Fantasy Diary',
@@ -33,7 +23,7 @@ export default async function LocaleLayout({
   params: Promise<{ locale: string }>;
 }) {
   const { locale } = await params;
-  
+
   // Ensure that the incoming `locale` is valid
   if (!locales.includes(locale)) {
     notFound();
@@ -46,12 +36,10 @@ export default async function LocaleLayout({
   return (
     <html lang={locale} className="size-full">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} relative size-full antialiased`}
+        className={`${pretendard.variable} ${pretendard.className} relative size-full antialiased`}
       >
         <NextIntlClientProvider messages={messages}>
-          <Providers>
-            {children}
-          </Providers>
+          <Providers>{children}</Providers>
         </NextIntlClientProvider>
       </body>
     </html>

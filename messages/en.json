@@ -11,5 +11,59 @@
     "loading": "Loading...",
     "error": "An error occurred",
     "retry": "Retry"
+  },
+  "auth": {
+    "signin": {
+      "title": "Sign In",
+      "subtitle": "Welcome to Fantasy Diary",
+      "email": "Email",
+      "password": "Password",
+      "emailPlaceholder": "Enter your email",
+      "passwordPlaceholder": "Enter your password",
+      "signinButton": "Sign in with Email",
+      "signingIn": "Signing in...",
+      "googleSignin": "Sign in with Google",
+      "processing": "Processing...",
+      "or": "or",
+      "noAccount": "Don't have an account?",
+      "signupLink": "Sign up",
+      "errors": {
+        "google": "Google sign-in failed.",
+        "emailRequired": "Please enter your email and password.",
+        "signin": "Sign-in failed. Please check your email and password.",
+        "callback": "An error occurred during authentication."
+      }
+    },
+    "signup": {
+      "title": "Sign Up",
+      "subtitle": "Create your Fantasy Diary account",
+      "email": "Email",
+      "password": "Password",
+      "confirmPassword": "Confirm Password",
+      "emailPlaceholder": "Enter your email",
+      "passwordPlaceholder": "Enter your password (min 6 characters)",
+      "confirmPasswordPlaceholder": "Re-enter your password",
+      "signupButton": "Sign up",
+      "processing": "Processing...",
+      "googleSignup": "Get started with Google",
+      "or": "or",
+      "hasAccount": "Already have an account?",
+      "signinLink": "Sign in",
+      "success": {
+        "title": "Sign up complete!",
+        "message": "We've sent a verification link to your email.\nPlease check your email and activate your account.",
+        "goToSignin": "Go to Sign in"
+      },
+      "errors": {
+        "google": "Google sign-in failed.",
+        "allFields": "Please fill in all fields.",
+        "passwordMismatch": "Passwords do not match.",
+        "passwordLength": "Password must be at least 6 characters.",
+        "signup": "Sign-up failed. Please try again."
+      }
+    },
+    "callback": {
+      "processing": "Processing sign in..."
+    }
   }
 }

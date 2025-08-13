@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useLocale, useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
@@ -15,6 +16,8 @@ export default function SignIn() {
   const { signInWithGoogle, signInWithEmail } = useAuthContext();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const t = useTranslations('auth.signin');
+  const locale = useLocale();
   
   const callbackError = searchParams.get('error');
 
@@ -24,7 +27,7 @@ export default function SignIn() {
       setError('');
       await signInWithGoogle();
     } catch (err) {
-      setError('Google 로그인에 실패했습니다.');
+      setError(t('errors.google'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -35,7 +38,7 @@ export default function SignIn() {
     e.preventDefault();
     
     if (!email || !password) {
-      setError('이메일과 비밀번호를 입력해주세요.');
+      setError(t('errors.emailRequired'));
 
       return;
     }
@@ -44,9 +47,9 @@ export default function SignIn() {
       setLoading(true);
       setError('');
       await signInWithEmail(email, password);
-      router.push('/');
+      router.push(`/${locale}`);
     } catch (err) {
-      setError('로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.');
+      setError(t('errors.signin'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -58,17 +61,17 @@ export default function SignIn() {
       <div className="w-full max-w-md space-y-8 rounded-lg bg-white p-8 shadow-md">
         <div>
           <h2 className="text-center text-3xl font-bold tracking-tight text-gray-900">
-            로그인
+            {t('title')}
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Fantasy Diary에 오신 것을 환영합니다
+            {t('subtitle')}
           </p>
         </div>
 
         {(error || callbackError) && (
           <div className="rounded-md bg-red-50 p-4">
             <p className="text-sm text-red-800">
-              {error || '인증 처리 중 오류가 발생했습니다.'}
+              {error || t('errors.callback')}
             </p>
           </div>
         )}
@@ -76,7 +79,7 @@ export default function SignIn() {
         <form className="space-y-6" onSubmit={handleEmailSignIn}>
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              이메일
+              {t('email')}
             </label>
             <div className="mt-1">
               <input
@@ -88,14 +91,14 @@ export default function SignIn() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                placeholder="이메일을 입력하세요"
+                placeholder={t('emailPlaceholder')}
               />
             </div>
           </div>
 
           <div>
             <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              비밀번호
+              {t('password')}
             </label>
             <div className="mt-1">
               <input
@@ -107,7 +110,7 @@ export default function SignIn() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="block w-full appearance-none rounded-md border border-gray-300 px-3 py-2 placeholder-gray-400 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500"
-                placeholder="비밀번호를 입력하세요"
+                placeholder={t('passwordPlaceholder')}
               />
             </div>
           </div>
@@ -118,7 +121,7 @@ export default function SignIn() {
               disabled={loading}
               className="group relative flex w-full justify-center rounded-md border border-transparent bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:bg-gray-400"
             >
-              {loading ? '로그인 중...' : '이메일로 로그인'}
+              {loading ? t('signingIn') : t('signinButton')}
             </button>
           </div>
 
@@ -127,7 +130,7 @@ export default function SignIn() {
               <div className="w-full border-t border-gray-300" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="bg-white px-2 text-gray-500">또는</span>
+              <span className="bg-white px-2 text-gray-500">{t('or')}</span>
             </div>
           </div>
 
@@ -156,19 +159,19 @@ export default function SignIn() {
                   d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                 />
               </svg>
-              {loading ? '처리 중...' : 'Google로 로그인'}
+              {loading ? t('processing') : t('googleSignin')}
             </button>
           </div>
         </form>
 
         <div className="text-center">
           <p className="text-sm text-gray-600">
-            계정이 없으신가요?{' '}
+            {t('noAccount')}{' '}
             <Link
-              href="/auth/signup"
+              href={`/${locale}/auth/signup`}
               className="font-medium text-indigo-600 hover:text-indigo-500"
             >
-              회원가입
+              {t('signupLink')}
             </Link>
           </p>
         </div>
