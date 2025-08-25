@@ -16,6 +16,7 @@ declare module "@@@next-typesafe-url" {
     "/[locale]/auth/callback": StaticRoute;
     "/[locale]/auth/signin": StaticRoute;
     "/[locale]/auth/signup": StaticRoute;
-    "/auth/callback": StaticRoute;
+    "/[locale]/episodes/[episodeId]": StaticRoute;
+    "/[locale]/episodes": StaticRoute;
   }
 }
