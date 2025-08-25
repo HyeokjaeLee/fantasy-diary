@@ -27,9 +27,14 @@ when: '언제 호출: PR 전/후 전체 코드 품질·안전성·A11y·i18n·tR
 - 컴포넌트 분리, Props 타입/의존성, 상태 흐름
 - i18n 키 존재/정확성(`messages/en.json`, `messages/ko.json`)
 - 접근성: 라벨/역할/포커스/대비/스크린리더
-- 테스트: 단위/통합 또는 수동 시나리오 제안 가능 여부
+- 테스트(Jest): 변경으로 영향받는 핵심 로직/버그 재현/경계 케이스에 대해 테스트 추가 요구 또는 직접 작성
+  - React 컴포넌트: `@testing-library/react`, `@testing-library/jest-dom` 사용
+  - 서버/유틸: `ts-jest`로 순수 함수/에러 케이스 검증, 외부 I/O는 mock
+  - PR에 테스트 부재 시 사유 확인, 정당하지 않으면 변경 요청
 - tRPC: 입력/출력 스키마 존재, 오류 분류 적절성(TRPCError), 호출부 타입 안전성
 - UI: shadcn/ui 컴포넌트 선택 적합성, 토큰/상태(hover/focus/disabled/error) 정의 여부
+- Serena: PR 설명에 Serena 문서 링크(PRD/결정 로그 등) 존재/유효성 확인. 없으면 변경 요청.
+  - 링크 간 양방향(Serena ↔ PR/코드) 유지 권장.
 
 출력 형식 지침:
 
