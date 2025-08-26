@@ -24,13 +24,8 @@ export default async function LocaleLayout({
 }) {
   const { locale } = await params;
 
-  // Ensure that the incoming `locale` is valid
-  if (!locales.includes(locale)) {
-    notFound();
-  }
+  if (!locales.includes(locale)) notFound();
 
-  // Providing all messages to the client
-  // side is the easiest way to get started
   const messages = await getMessages();
 
   return (
@@ -39,7 +34,9 @@ export default async function LocaleLayout({
         className={`${pretendard.variable} ${pretendard.className} relative size-full antialiased`}
       >
         <NextIntlClientProvider messages={messages}>
-          <Providers>{children}</Providers>
+          <Providers>
+            <div className="size-full">{children}</div>
+          </Providers>
         </NextIntlClientProvider>
       </body>
     </html>

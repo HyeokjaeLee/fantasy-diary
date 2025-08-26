@@ -13,10 +13,6 @@ declare module "@@@next-typesafe-url" {
   }
 
   interface StaticRouter {
-    "/[locale]/auth/callback": StaticRoute;
-    "/[locale]/auth/signin": StaticRoute;
-    "/[locale]/auth/signup": StaticRoute;
-    "/[locale]/episodes/[episodeId]": StaticRoute;
-    "/[locale]/episodes": StaticRoute;
+    "/[locale]/diary/[title]/[time]": StaticRoute;
   }
 }
