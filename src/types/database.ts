@@ -7,14 +7,109 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.4"
   }
   public: {
     Tables: {
-      [_ in never]: never
+      fantasy_diary_characters: {
+        Row: {
+          appearance: string | null
+          background: string | null
+          character_traits: string[] | null
+          current_location: string | null
+          current_status: string | null
+          first_appeared_at: string | null
+          id: string
+          last_updated: string | null
+          major_events: string[] | null
+          name: string
+          personality: string | null
+          relationships: Json | null
+        }
+        Insert: {
+          appearance?: string | null
+          background?: string | null
+          character_traits?: string[] | null
+          current_location?: string | null
+          current_status?: string | null
+          first_appeared_at?: string | null
+          id?: string
+          last_updated?: string | null
+          major_events?: string[] | null
+          name: string
+          personality?: string | null
+          relationships?: Json | null
+        }
+        Update: {
+          appearance?: string | null
+          background?: string | null
+          character_traits?: string[] | null
+          current_location?: string | null
+          current_status?: string | null
+          first_appeared_at?: string | null
+          id?: string
+          last_updated?: string | null
+          major_events?: string[] | null
+          name?: string
+          personality?: string | null
+          relationships?: Json | null
+        }
+        Relationships: []
+      }
+      fantasy_diary_entries: {
+        Row: {
+          appeared_characters: string[] | null
+          content: string
+          created_at: string | null
+          emotional_tone: string | null
+          id: string
+          location: string | null
+          major_events: string[] | null
+          mood: string | null
+          next_context_hints: string | null
+          previous_context: string | null
+          story_tags: string[] | null
+          summary: string | null
+          weather_condition: string | null
+          weather_temperature: number | null
+        }
+        Insert: {
+          appeared_characters?: string[] | null
+          content: string
+          created_at?: string | null
+          emotional_tone?: string | null
+          id?: string
+          location?: string | null
+          major_events?: string[] | null
+          mood?: string | null
+          next_context_hints?: string | null
+          previous_context?: string | null
+          story_tags?: string[] | null
+          summary?: string | null
+          weather_condition?: string | null
+          weather_temperature?: number | null
+        }
+        Update: {
+          appeared_characters?: string[] | null
+          content?: string
+          created_at?: string | null
+          emotional_tone?: string | null
+          id?: string
+          location?: string | null
+          major_events?: string[] | null
+          mood?: string | null
+          next_context_hints?: string | null
+          previous_context?: string | null
+          story_tags?: string[] | null
+          summary?: string | null
+          weather_condition?: string | null
+          weather_temperature?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
