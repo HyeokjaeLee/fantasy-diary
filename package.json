@@ -11,8 +11,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:ci": "jest --runInBand --ci",
-    "gen:api": "bash scripts/gen-api.sh",
-    "openapi-ts": "openapi-ts"
+    "gen:api": "bash scripts/gen-api.sh"
   },
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.10",
