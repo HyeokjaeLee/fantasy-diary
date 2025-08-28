@@ -103,7 +103,7 @@ const config = [
   },
   eslintConfigPrettier,
   {
-    ignores: ['node_modules/', '.next', 'config.mjs'],
+    ignores: ['node_modules/', '.next', 'config.mjs', '__generated__/'],
   },
 ];
 
