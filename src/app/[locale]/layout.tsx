@@ -2,12 +2,11 @@ import '@/configs/styles/globals.css';
 
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { NextIntlClientProvider } from 'next-intl';
-import { getMessages } from 'next-intl/server';
 
-import { Providers } from '@/components/Providers';
 import { pretendard } from '@/configs/fonts';
 
+import { ClientProvider } from './_components/ClientProvider';
+import { ServerProvider } from './_components/ServerProvider';
 export const metadata: Metadata = {
   title: 'Fantasy Diary',
   description: 'Your personal fantasy diary',
@@ -26,18 +25,16 @@ export default async function LocaleLayout({
 
   if (!locales.includes(locale)) notFound();
 
-  const messages = await getMessages();
-
   return (
     <html lang={locale} className="size-full">
       <body
         className={`${pretendard.variable} ${pretendard.className} relative size-full antialiased`}
       >
-        <NextIntlClientProvider messages={messages}>
-          <Providers>
+        <ServerProvider>
+          <ClientProvider>
             <div className="size-full">{children}</div>
-          </Providers>
-        </NextIntlClientProvider>
+          </ClientProvider>
+        </ServerProvider>
       </body>
     </html>
   );
