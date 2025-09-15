@@ -34,6 +34,7 @@
     "next": "15.4.6",
     "next-intl": "^4.3.7",
     "next-typesafe-url": "^5.1.8",
+    "openai": "5.20.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "superjson": "2.2.2",

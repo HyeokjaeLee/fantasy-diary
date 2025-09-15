@@ -3,8 +3,11 @@ import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import superjson from 'superjson';
 
 // Extend this when you add auth/session to context
-export const createContext = async (_opts: FetchCreateContextFnOptions | null) => {
-  return {} as Record<string, never>;
+export const createContext = async (opts: FetchCreateContextFnOptions | null) => {
+  const headers = opts?.req.headers;
+  const isClient = headers?.get('isClient') === 'true' || false;
+
+  return { isClient, headers };
 };
 
 const t = initTRPC.context<typeof createContext>().create({

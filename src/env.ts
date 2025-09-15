@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 const server = {
   NEXT_SUPABASE_SERVICE_ROLE: z.string().min(1),
+  OPENAI_API_KEY: z.string().min(1).optional(),
 };
 
 const client = {
@@ -22,6 +23,7 @@ export const ENV = createEnv({
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_SUPABASE_SERVICE_ROLE: process.env.NEXT_SUPABASE_SERVICE_ROLE,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   },
 
   // 빈 문자열을 undefined로 취급 (선택)
