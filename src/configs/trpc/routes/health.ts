@@ -19,9 +19,15 @@ export const health = router({
 
     if (!res.ok) {
       if (res.reason === 'busy') {
-        throw new TRPCError({ code: 'CONFLICT', message: 'health.ping already running' });
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'health.ping already running',
+        });
       }
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Lock backend unavailable' });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Lock backend unavailable',
+      });
     }
 
     return res.value;
@@ -41,9 +47,15 @@ export const health = router({
 
     if (!res.ok) {
       if (res.reason === 'busy') {
-        throw new TRPCError({ code: 'CONFLICT', message: 'health.long already running' });
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'health.long already running',
+        });
       }
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Lock backend unavailable' });
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'Lock backend unavailable',
+      });
     }
 
     return res.value;

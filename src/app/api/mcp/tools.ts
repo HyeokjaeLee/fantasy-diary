@@ -1,9 +1,10 @@
 import { client } from '@supabase-api/client.gen';
-import { getFantasyDiaryEntries } from '@supabase-api/sdk.gen';
-import { ENV } from '@/env';
-import { SUPABASE } from '@/constants/supabase';
+import { getEscapeFromSeoulEntries } from '@supabase-api/sdk.gen';
 import OpenAI from 'openai';
 import { z } from 'zod';
+
+import { SUPABASE } from '@/constants/supabase';
+import { ENV } from '@/env';
 
 // Tool definition
 export interface ToolSpec<TInput extends z.ZodTypeAny, TResult> {
@@ -24,10 +25,6 @@ function setupServerClient() {
 }
 
 function getOpenAI() {
-  if (!ENV.OPENAI_API_KEY) {
-    throw new Error('OPENAI_API_KEY is not configured');
-  }
-
   return new OpenAI({ apiKey: ENV.OPENAI_API_KEY });
 }
 
@@ -49,7 +46,7 @@ const listDiaryEntries: ToolSpec<
   input: listDiaryEntriesInput,
   execute: async ({ limit = 20 }) => {
     setupServerClient();
-    const { data, error } = await getFantasyDiaryEntries();
+    const { data, error } = await getEscapeFromSeoulEntries();
 
     if (error) {
       throw new Error(`Supabase error: ${String(error)}`);
@@ -81,7 +78,7 @@ const summarizeDiaryEntries: ToolSpec<
   input: summarizeDiaryEntriesInput,
   execute: async ({ limit = 5, model = 'gpt-4o-mini', language = 'ko' }) => {
     setupServerClient();
-    const { data, error } = await getFantasyDiaryEntries();
+    const { data, error } = await getEscapeFromSeoulEntries();
 
     if (error) {
       throw new Error(`Supabase error: ${String(error)}`);

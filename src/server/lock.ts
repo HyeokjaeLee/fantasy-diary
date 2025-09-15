@@ -1,21 +1,3 @@
-/*
-  Distributed lock helper.
-  - Uses Supabase table `locks` if Service Role is configured.
-  - Falls back to per-instance in-memory lock (best-effort on serverless).
-
-  Expected table (create this once in your Supabase DB):
-
-  create table if not exists public.locks (
-    name text primary key,
-    owner uuid not null,
-    expires_at timestamptz not null default now()
-  );
-
-  -- Optional: RLS off for simplicity if using Service Role client
-  -- alter table public.locks enable row level security;
-  -- (Service Role bypasses RLS; no policies are required.)
-*/
-
 import { supabaseServer } from '@/lib/supabaseServer';
 
 type AcquireResult =
@@ -27,12 +9,6 @@ type MemLock = { owner: string; expiresAt: number };
 const globalAny = globalThis as unknown as {
   [MEM_KEY]?: Map<string, MemLock>;
 };
-
-function getMemStore() {
-  if (!globalAny[MEM_KEY]) globalAny[MEM_KEY] = new Map<string, MemLock>();
-
-  return globalAny[MEM_KEY]!;
-}
 
 export async function acquireLock(
   name: string,
@@ -51,6 +27,7 @@ export async function acquireLock(
     });
     if (error) return { ok: false, reason: 'unavailable' };
     if (data === true) return { ok: true, token };
+
     return { ok: false, reason: 'busy' };
   } catch {
     return { ok: false, reason: 'unavailable' };
@@ -80,6 +57,7 @@ export async function extendLock(
       ttl_ms: ttlMs,
     });
     if (error) return false;
+
     return data === true;
   } catch {
     return false;
@@ -91,11 +69,11 @@ export async function runWithLock<T>(
   work: () => Promise<T>,
   options?: { ttlMs?: number; heartbeatMs?: number },
 ): Promise<
-  | { ok: true; value: T }
-  | { ok: false; reason: 'busy' | 'unavailable' }
+  { ok: true; value: T } | { ok: false; reason: 'busy' | 'unavailable' }
 > {
   const ttlMs = options?.ttlMs ?? 30_000;
-  const heartbeatMs = options?.heartbeatMs ?? Math.max(5_000, Math.floor(ttlMs / 2));
+  const heartbeatMs =
+    options?.heartbeatMs ?? Math.max(5_000, Math.floor(ttlMs / 2));
 
   const res = await acquireLock(name, ttlMs);
   if (!res.ok) return { ok: false, reason: res.reason };
@@ -109,6 +87,7 @@ export async function runWithLock<T>(
     }, heartbeatMs);
 
     const value = await work();
+
     return { ok: true, value };
   } finally {
     if (timer) clearInterval(timer);
