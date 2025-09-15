@@ -14,5 +14,6 @@ declare module "@@@next-typesafe-url" {
 
   interface StaticRouter {
     "/[locale]/diary/[title]/[id]": StaticRoute;
+    "/[locale]/trpc-test": StaticRoute;
   }
 }
