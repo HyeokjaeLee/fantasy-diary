@@ -6,31 +6,18 @@ import {
 } from '@supabase-api/sdk.gen';
 import type { JSONSchema4 } from 'json-schema';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { ENV } from '@/env';
+import {
+  type JsonRpcFailure,
+  type JsonRpcId,
+  type JsonRpcSuccess,
+  zCallToolParams,
+  zJsonRpcRequest,
+} from '@/types/mcp';
 
-type JsonRpcId = string | number | null;
-interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  method: string;
-  params?: unknown;
-}
-interface JsonRpcSuccess<T> {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  result: T;
-}
-interface JsonRpcError {
-  code: number;
-  message: string;
-  data?: unknown;
-}
-interface JsonRpcFailure {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  error: JsonRpcError;
-}
+export const runtime = 'edge';
 
 function ok<T>(id: JsonRpcId, result: T): JsonRpcSuccess<T> {
   return { jsonrpc: '2.0', id, result };
@@ -66,8 +53,11 @@ interface ToolDef<TArgs, TResult> {
   handler: (args: TArgs) => Promise<TResult>;
 }
 
-type ListArgs = { limit?: number };
-type IdArgs = { id: string };
+// zod schemas for safe arg parsing
+const zListArgs = z.object({
+  limit: z.number().int().min(1).max(100).optional(),
+});
+const zId = z.object({ id: z.string().uuid() });
 
 const tools: Array<ToolDef<unknown, unknown>> = [
   {
@@ -81,7 +71,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { limit = 50 } = (rawArgs as ListArgs) ?? {};
+      const { limit = 50 } = zListArgs.parse(rawArgs ?? {});
       configureSupabaseRest();
       const { data, error } = await getEscapeFromSeoulEntries({
         headers: { Prefer: 'count=none' },
@@ -102,7 +92,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { id } = rawArgs as IdArgs;
+      const { id } = zId.parse(rawArgs);
       configureSupabaseRest();
       const { data, error } = await getEscapeFromSeoulEntries({
         headers: { Prefer: 'count=none' },
@@ -124,7 +114,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { limit = 50 } = (rawArgs as ListArgs) ?? {};
+      const { limit = 50 } = zListArgs.parse(rawArgs ?? {});
       configureSupabaseRest();
       const { data, error } = await getEscapeFromSeoulCharacters({
         headers: { Prefer: 'count=none' },
@@ -145,7 +135,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { id } = rawArgs as IdArgs;
+      const { id } = zId.parse(rawArgs);
       configureSupabaseRest();
       const { data, error } = await getEscapeFromSeoulCharacters({
         headers: { Prefer: 'count=none' },
@@ -167,7 +157,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { limit = 50 } = (rawArgs as ListArgs) ?? {};
+      const { limit = 50 } = zListArgs.parse(rawArgs ?? {});
       configureSupabaseRest();
       const { data, error } = await getEscapeFromSeoulPlaces({
         headers: { Prefer: 'count=none' },
@@ -188,7 +178,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { id } = rawArgs as IdArgs;
+      const { id } = zId.parse(rawArgs);
       configureSupabaseRest();
       const { data, error } = await getEscapeFromSeoulPlaces({
         headers: { Prefer: 'count=none' },
@@ -203,7 +193,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as JsonRpcRequest;
+    const body = zJsonRpcRequest.parse(await req.json());
     if (body.jsonrpc !== '2.0' || typeof body.method !== 'string') {
       return NextResponse.json(fail(null, -32600, 'Invalid Request'), {
         status: 400,
@@ -223,20 +213,18 @@ export async function POST(req: Request) {
     }
 
     if (body.method === 'tools/call') {
-      const params = body.params as
-        | { name?: string; arguments?: unknown }
-        | undefined;
-      if (!params?.name)
+      const parsed = zCallToolParams.safeParse(body.params ?? {});
+      if (!parsed.success || !parsed.data.name)
         return NextResponse.json(fail(body.id, -32602, 'Missing tool name'), {
           status: 400,
         });
-      const tool = tools.find((t) => t.name === params.name);
+      const tool = tools.find((t) => t.name === parsed.data.name);
       if (!tool)
         return NextResponse.json(
-          fail(body.id, -32601, `Unknown tool: ${params.name}`),
+          fail(body.id, -32601, `Unknown tool: ${parsed.data.name}`),
           { status: 404 },
         );
-      const result = await tool.handler(params.arguments ?? {});
+      const result = await tool.handler(parsed.data.arguments ?? {});
 
       return NextResponse.json(
         ok(body.id, {

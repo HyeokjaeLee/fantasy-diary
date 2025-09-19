@@ -12,31 +12,18 @@ import {
 } from '@supabase-api/sdk.gen';
 import type { JSONSchema4 } from 'json-schema';
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { ENV } from '@/env';
+import {
+  type JsonRpcFailure,
+  type JsonRpcId,
+  type JsonRpcSuccess,
+  zCallToolParams,
+  zJsonRpcRequest,
+} from '@/types/mcp';
 
-type JsonRpcId = string | number | null;
-interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  method: string;
-  params?: unknown;
-}
-interface JsonRpcSuccess<T> {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  result: T;
-}
-interface JsonRpcError {
-  code: number;
-  message: string;
-  data?: unknown;
-}
-interface JsonRpcFailure {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  error: JsonRpcError;
-}
+export const runtime = 'edge';
 function ok<T>(id: JsonRpcId, result: T): JsonRpcSuccess<T> {
   return { jsonrpc: '2.0', id, result };
 }
@@ -50,7 +37,7 @@ function fail(
 }
 
 function configureSupabaseRest(): void {
-  const url = ENV.NEXT_PUBLIC_SUPABASE_URL.replace(/\/$/, '');
+  const url = (ENV.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
   const baseUrl = `${url}/rest/v1`;
   const serviceRole = ENV.NEXT_SUPABASE_SERVICE_ROLE;
   if (!url || !serviceRole) {
@@ -71,9 +58,51 @@ interface ToolDef<TArgs, TResult> {
   handler: (args: TArgs) => Promise<TResult>;
 }
 
-type IdArgs = { id: string };
-type CreateArgs = Record<string, unknown>;
-type UpdateArgs = CreateArgs & IdArgs;
+// zod schemas for safe parsing (avoid type assertions) for tool arguments
+
+const zId = z.object({ id: z.string().uuid() });
+
+// Entries
+const zEntriesCreate = z
+  .object({
+    content: z.string(),
+    id: z.string().uuid().optional(),
+  })
+  .passthrough();
+const zEntriesUpdate = z
+  .object({
+    id: z.string().uuid(),
+    content: z.string(),
+  })
+  .passthrough();
+
+// Characters
+const zCharactersCreate = z
+  .object({
+    name: z.string(),
+    id: z.string().uuid().optional(),
+  })
+  .passthrough();
+const zCharactersUpdate = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+  })
+  .passthrough();
+
+// Places
+const zPlacesCreate = z
+  .object({
+    name: z.string(),
+    id: z.string().uuid().optional(),
+  })
+  .passthrough();
+const zPlacesUpdate = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+  })
+  .passthrough();
 
 const tools: Array<ToolDef<unknown, unknown>> = [
   // entries.*
@@ -81,12 +110,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     name: 'entries.create',
     description: 'Create a diary entry',
     inputSchema: { type: 'object', properties: {}, additionalProperties: true },
-    handler: async (body: unknown) => {
+    handler: async (raw: unknown) => {
+      const parsed = zEntriesCreate.parse(raw);
+      const body = { id: parsed.id ?? crypto.randomUUID(), ...parsed };
       configureSupabaseRest();
       const { data, error } = await postEscapeFromSeoulEntries({
         headers: { Prefer: 'return=representation' },
         query: { select: '*' },
-        body: body as CreateArgs,
+        body,
       });
       if (error) throw new Error(String(error));
 
@@ -103,16 +134,16 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: true,
     },
     handler: async (rawArgs: unknown) => {
-      const { id, ...patch } = rawArgs as UpdateArgs;
+      const payload = zEntriesUpdate.parse(rawArgs);
       configureSupabaseRest();
       const { error } = await patchEscapeFromSeoulEntries({
         headers: { Prefer: 'return=minimal' },
-        query: { id: `eq.${id}` },
-        body: patch,
+        query: { id: `eq.${payload.id}` },
+        body: payload,
       });
       if (error) throw new Error(String(error));
 
-      return { ok: true } as const;
+      return { ok: true };
     },
   },
   {
@@ -125,14 +156,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { id } = rawArgs as IdArgs;
+      const { id } = zId.parse(rawArgs);
       configureSupabaseRest();
       const { error } = await deleteEscapeFromSeoulEntries({
         query: { id: `eq.${id}` },
       });
       if (error) throw new Error(String(error));
 
-      return { ok: true } as const;
+      return { ok: true };
     },
   },
 
@@ -141,12 +172,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     name: 'characters.create',
     description: 'Create character',
     inputSchema: { type: 'object', properties: {}, additionalProperties: true },
-    handler: async (body: unknown) => {
+    handler: async (raw: unknown) => {
+      const parsed = zCharactersCreate.parse(raw);
+      const body = { id: parsed.id ?? crypto.randomUUID(), ...parsed };
       configureSupabaseRest();
       const { data, error } = await postEscapeFromSeoulCharacters({
         headers: { Prefer: 'return=representation' },
         query: { select: '*' },
-        body: body as CreateArgs,
+        body,
       });
       if (error) throw new Error(String(error));
 
@@ -163,16 +196,16 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: true,
     },
     handler: async (rawArgs: unknown) => {
-      const { id, ...patch } = rawArgs as UpdateArgs;
+      const payload = zCharactersUpdate.parse(rawArgs);
       configureSupabaseRest();
       const { error } = await patchEscapeFromSeoulCharacters({
         headers: { Prefer: 'return=minimal' },
-        query: { id: `eq.${id}` },
-        body: patch,
+        query: { id: `eq.${payload.id}` },
+        body: payload,
       });
       if (error) throw new Error(String(error));
 
-      return { ok: true } as const;
+      return { ok: true };
     },
   },
   {
@@ -185,14 +218,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { id } = rawArgs as IdArgs;
+      const { id } = zId.parse(rawArgs);
       configureSupabaseRest();
       const { error } = await deleteEscapeFromSeoulCharacters({
         query: { id: `eq.${id}` },
       });
       if (error) throw new Error(String(error));
 
-      return { ok: true } as const;
+      return { ok: true };
     },
   },
 
@@ -201,12 +234,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     name: 'places.create',
     description: 'Create place',
     inputSchema: { type: 'object', properties: {}, additionalProperties: true },
-    handler: async (body: unknown) => {
+    handler: async (raw: unknown) => {
+      const parsed = zPlacesCreate.parse(raw);
+      const body = { id: parsed.id ?? crypto.randomUUID(), ...parsed };
       configureSupabaseRest();
       const { data, error } = await postEscapeFromSeoulPlaces({
         headers: { Prefer: 'return=representation' },
         query: { select: '*' },
-        body: body as CreateArgs,
+        body,
       });
       if (error) throw new Error(String(error));
 
@@ -223,16 +258,16 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: true,
     },
     handler: async (rawArgs: unknown) => {
-      const { id, ...patch } = rawArgs as UpdateArgs;
+      const payload = zPlacesUpdate.parse(rawArgs);
       configureSupabaseRest();
       const { error } = await patchEscapeFromSeoulPlaces({
         headers: { Prefer: 'return=minimal' },
-        query: { id: `eq.${id}` },
-        body: patch,
+        query: { id: `eq.${payload.id}` },
+        body: payload,
       });
       if (error) throw new Error(String(error));
 
-      return { ok: true } as const;
+      return { ok: true };
     },
   },
   {
@@ -245,21 +280,21 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { id } = rawArgs as IdArgs;
+      const { id } = zId.parse(rawArgs);
       configureSupabaseRest();
       const { error } = await deleteEscapeFromSeoulPlaces({
         query: { id: `eq.${id}` },
       });
       if (error) throw new Error(String(error));
 
-      return { ok: true } as const;
+      return { ok: true };
     },
   },
 ];
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json()) as JsonRpcRequest;
+    const body = zJsonRpcRequest.parse(await req.json());
     if (body.jsonrpc !== '2.0' || typeof body.method !== 'string') {
       return NextResponse.json(fail(null, -32600, 'Invalid Request'), {
         status: 400,
@@ -279,20 +314,18 @@ export async function POST(req: Request) {
     }
 
     if (body.method === 'tools/call') {
-      const params = body.params as
-        | { name?: string; arguments?: unknown }
-        | undefined;
-      if (!params?.name)
+      const parsed = zCallToolParams.safeParse(body.params ?? {});
+      if (!parsed.success || !parsed.data.name)
         return NextResponse.json(fail(body.id, -32602, 'Missing tool name'), {
           status: 400,
         });
-      const tool = tools.find((t) => t.name === params.name);
+      const tool = tools.find((t) => t.name === parsed.data.name);
       if (!tool)
         return NextResponse.json(
-          fail(body.id, -32601, `Unknown tool: ${params.name}`),
+          fail(body.id, -32601, `Unknown tool: ${parsed.data.name}`),
           { status: 404 },
         );
-      const result = await tool.handler(params.arguments ?? {});
+      const result = await tool.handler(parsed.data.arguments ?? {});
 
       return NextResponse.json(
         ok(body.id, {
