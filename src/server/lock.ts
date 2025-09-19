@@ -12,6 +12,7 @@ const globalAny = globalThis as unknown as {
 
 function getMemLocks(): Map<string, MemLock> {
   if (!globalAny[MEM_KEY]) globalAny[MEM_KEY] = new Map<string, MemLock>();
+
   return globalAny[MEM_KEY]!;
 }
 
@@ -21,6 +22,7 @@ function tryAcquireMemLock(name: string, ttlMs: number, owner: string): AcquireR
   const cur = locks.get(name);
   if (cur && cur.expiresAt > now) return { ok: false, reason: 'busy' };
   locks.set(name, { owner, expiresAt: now + ttlMs });
+
   return { ok: true, token: owner };
 }
 
@@ -52,6 +54,7 @@ export async function releaseLock(name: string, token: string): Promise<void> {
     const locks = getMemLocks();
     const cur = locks.get(name);
     if (cur && cur.owner === token) locks.delete(name);
+
     return;
   }
   try {
@@ -72,6 +75,7 @@ export async function extendLock(
     if (!cur || cur.owner !== token) return false;
     cur.expiresAt = Date.now() + ttlMs;
     locks.set(name, cur);
+
     return true;
   }
   try {

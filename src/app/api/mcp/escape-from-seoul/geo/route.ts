@@ -2,6 +2,7 @@ import type { JSONSchema4 } from 'json-schema';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { fetchKmaUltraSrtNcst } from '@/app/api/external/kma';
 import { ENV } from '@/env';
 import {
   type JsonRpcFailure,
@@ -231,6 +232,22 @@ const zGridArgs = z.object({
   prefer: z.enum(['kakao', 'osm']).optional(),
 });
 
+const zGridPlaceWeatherArgs = z.object({
+  nx: z.number().int(),
+  ny: z.number().int(),
+  baseDate: z
+    .string()
+    .regex(/^\d{8}$/)
+    .optional(),
+  baseTime: z
+    .string()
+    .regex(/^\d{4}$/)
+    .optional(),
+  pageNumber: z.number().int().optional(),
+  numberOfRows: z.number().int().optional(),
+  neighbors: z.boolean().optional(),
+});
+
 const tools: Array<ToolDef<unknown, unknown>> = [
   {
     name: 'geo.gridToLatLon',
@@ -286,6 +303,101 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       if (!result) throw new Error('역지오코딩 실패');
 
       return { ...result, nx, ny };
+    },
+  },
+  {
+    name: 'geo.gridPlaceWeather',
+    description:
+      'Return KMA ultra short-term observations and grid context (lat/lon, bbox, optional neighbors) with AI hints for place name inference. No external geocoding used.',
+    inputSchema: {
+      type: 'object',
+      required: ['nx', 'ny'],
+      properties: {
+        nx: { type: 'integer' },
+        ny: { type: 'integer' },
+        baseDate: { type: 'string', description: 'YYYYMMDD' },
+        baseTime: { type: 'string', description: 'HHmm' },
+        pageNumber: { type: 'integer' },
+        numberOfRows: { type: 'integer' },
+        neighbors: { type: 'boolean', description: 'Include 8-neighbor cells' },
+      },
+      additionalProperties: false,
+    },
+    handler: async (rawArgs: unknown) => {
+      const args = zGridPlaceWeatherArgs.parse(rawArgs);
+      const { nx, ny } = args;
+
+      const { lat, lon } = gridToLatLon(nx, ny);
+
+      const corner = (dx: number, dy: number) => gridToLatLon(nx + dx, ny + dy);
+      const bbox = {
+        nw: corner(-0.5, -0.5),
+        ne: corner(0.5, -0.5),
+        se: corner(0.5, 0.5),
+        sw: corner(-0.5, 0.5),
+      };
+
+      const neighborOffsets: Array<[number, number]> = [
+        [-1, -1],
+        [0, -1],
+        [1, -1],
+        [-1, 0],
+        [1, 0],
+        [-1, 1],
+        [0, 1],
+        [1, 1],
+      ];
+      const neighborCells = args.neighbors
+        ? neighborOffsets.map(([dx, dy]) => {
+            const nxx = nx + dx;
+            const nyy = ny + dy;
+            const p = gridToLatLon(nxx, nyy);
+
+            return { dx, dy, nx: nxx, ny: nyy, lat: p.lat, lon: p.lon };
+          })
+        : [];
+
+      const dms = (value: number, pos: 'lat' | 'lon') => {
+        const abs = Math.abs(value);
+        const deg = Math.floor(abs);
+        const minFloat = (abs - deg) * 60;
+        const min = Math.floor(minFloat);
+        const sec = Math.round((minFloat - min) * 60 * 100) / 100;
+        const hemi =
+          pos === 'lat' ? (value >= 0 ? 'N' : 'S') : value >= 0 ? 'E' : 'W';
+
+        return `${deg}°${min}'${sec}" ${hemi}`;
+      };
+
+      const weather = await fetchKmaUltraSrtNcst({
+        gridX: nx,
+        gridY: ny,
+        baseDate: args.baseDate,
+        baseTime: args.baseTime,
+        pageNumber: args.pageNumber,
+        numberOfRows: args.numberOfRows,
+      });
+
+      const hints = [
+        `WGS84 좌표(lat, lon): ${lat.toFixed(6)}, ${lon.toFixed(6)} (DMS: ${dms(lat, 'lat')}, ${dms(lon, 'lon')})`,
+        '이 응답은 KMA DFS 격자(약 5km 해상도) 기반입니다. 한국의 행정구 경계와 정확히 일치하지 않을 수 있습니다.',
+        '지명을 생성할 때는 lat/lon과 bbox의 모서리 좌표를 활용해 가장 가까운 동/읍/면 또는 지명 후보를 추론하세요.',
+        '가능하다면 도/시/구/동 순으로 구체화하고, 건물명/도로명은 별도 외부 API 없이 근거가 있을 때만 기술하세요.',
+      ];
+
+      return {
+        grid: { nx, ny },
+        latlon: { lat, lon },
+        bbox,
+        neighbors: neighborCells,
+        weather: {
+          baseDate: weather.baseDate,
+          baseTime: weather.baseTime,
+          items: weather.items,
+          header: weather.header,
+        },
+        ai: { hints },
+      };
     },
   },
 ];

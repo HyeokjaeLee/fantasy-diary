@@ -4,7 +4,13 @@ import { useState } from 'react';
 
 import { trpc } from '@/configs/trpc';
 
-type StyleOption = '리얼리즘' | '드라마' | '스릴러' | '호러' | '디스토피아' | '느와르';
+type StyleOption =
+  | '리얼리즘'
+  | '드라마'
+  | '스릴러'
+  | '호러'
+  | '디스토피아'
+  | '느와르';
 type LengthOption = '짧은 글' | '중편' | '장편';
 
 export default function StoryTestPage() {
@@ -23,7 +29,7 @@ export default function StoryTestPage() {
   };
 
   return (
-    <main className="mx-auto max-w-3xl p-6 space-y-6">
+    <main className="mx-auto max-w-3xl space-y-6 p-6">
       <h1 className="text-2xl font-semibold">Story Generator Test</h1>
 
       <form onSubmit={onSubmit} className="space-y-4">
@@ -52,13 +58,20 @@ export default function StoryTestPage() {
               value={style}
               onChange={(e) => setStyle(e.target.value as StyleOption)}
             >
-              {(['리얼리즘', '드라마', '스릴러', '호러', '디스토피아', '느와르'] as const).map(
-                (opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ),
-              )}
+              {(
+                [
+                  '리얼리즘',
+                  '드라마',
+                  '스릴러',
+                  '호러',
+                  '디스토피아',
+                  '느와르',
+                ] as const
+              ).map((opt) => (
+                <option key={opt} value={opt}>
+                  {opt}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -122,7 +135,9 @@ export default function StoryTestPage() {
             <summary className="cursor-pointer select-none text-sm text-gray-600">
               저장 응답 보기
             </summary>
-            <pre className="overflow-auto text-sm">{JSON.stringify(mutation.data.saved, null, 2)}</pre>
+            <pre className="overflow-auto text-sm">
+              {JSON.stringify(mutation.data.saved, null, 2)}
+            </pre>
           </details>
         </section>
       ) : null}
