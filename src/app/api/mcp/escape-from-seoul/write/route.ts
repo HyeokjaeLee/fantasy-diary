@@ -23,7 +23,6 @@ import {
   zJsonRpcRequest,
 } from '@/types/mcp';
 
-export const runtime = 'edge';
 function ok<T>(id: JsonRpcId, result: T): JsonRpcSuccess<T> {
   return { jsonrpc: '2.0', id, result };
 }
