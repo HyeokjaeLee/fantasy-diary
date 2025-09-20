@@ -1,0 +1,4 @@
+- Next.js 15 app written in TypeScript for the "fantasy diary" experience (Escape from Seoul content) backed by Supabase.
+- Uses Supabase REST client generated code under `@supabase-api/*`, TRPC, React 19, Zod for validation, and edge runtime for MCP endpoints.
+- API routes under `src/app/api` include MCP tools (`escape-from-seoul`) plus external integrations like KMA weather.
+- Environment vars managed via `@t3-oss/env-nextjs` with server/client separation (`src/env.ts`).

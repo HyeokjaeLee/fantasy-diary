@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { fetchKmaUltraSrtNcst } from '@/app/api/external/kma';
-import { ENV } from '@/env';
 import {
   type JsonRpcFailure,
   type JsonRpcId,
@@ -81,143 +80,7 @@ function gridToLatLon(nx: number, ny: number): LatLon {
   return { lat: alat, lon: alon };
 }
 
-interface ReverseResult {
-  name: string;
-  source: 'kakao' | 'osm';
-  lat: number;
-  lon: number;
-  nx: number;
-  ny: number;
-  address?: string;
-  raw?: unknown;
-}
-
-async function reverseWithKakao(
-  lon: number,
-  lat: number,
-): Promise<ReverseResult | null> {
-  const key = ENV.NEXT_KAKAO_REST_API_KEY;
-  if (!key) return null;
-
-  const headers = { Authorization: `KakaoAK ${key}` } as const;
-
-  const addrUrl = new URL(
-    'https://dapi.kakao.com/v2/local/geo/coord2address.json',
-  );
-  addrUrl.searchParams.set('x', String(lon));
-  addrUrl.searchParams.set('y', String(lat));
-
-  const addrRes = await fetch(addrUrl.toString(), { headers });
-  if (!addrRes.ok) return null;
-  const addrJson = (await addrRes.json()) as {
-    documents?: Array<{
-      address?: { address_name?: string };
-      road_address?: { address_name?: string; building_name?: string };
-    }>;
-  };
-
-  const regUrl = new URL(
-    'https://dapi.kakao.com/v2/local/geo/coord2regioncode.json',
-  );
-  regUrl.searchParams.set('x', String(lon));
-  regUrl.searchParams.set('y', String(lat));
-  const regRes = await fetch(regUrl.toString(), { headers });
-  const regJson = regRes.ok
-    ? ((await regRes.json()) as {
-        documents?: Array<{
-          region_type?: string;
-          address_name?: string;
-          region_1depth_name?: string;
-          region_2depth_name?: string;
-          region_3depth_name?: string;
-        }>;
-      })
-    : undefined;
-
-  const doc = addrJson.documents?.[0];
-  const building = doc?.road_address?.building_name?.trim();
-  const roadName = doc?.road_address?.address_name?.trim();
-  const lotName = doc?.address?.address_name?.trim();
-
-  const region =
-    regJson?.documents?.find(
-      (d) => d.region_type === 'H' || d.region_type === 'B',
-    ) ?? regJson?.documents?.[0];
-
-  const regionPart =
-    region?.address_name ||
-    [
-      region?.region_1depth_name,
-      region?.region_2depth_name,
-      region?.region_3depth_name,
-    ]
-      .filter(Boolean)
-      .join(' ');
-
-  const address = building
-    ? `${roadName ?? lotName ?? ''} ${building}`.trim()
-    : (roadName ?? lotName ?? regionPart ?? '');
-
-  let name = '';
-  if (building) name = building;
-  else if (roadName) name = roadName;
-  else if (region?.region_3depth_name)
-    name = `${region.region_3depth_name} 근처`;
-  else if (regionPart) name = regionPart;
-  else name = address || '알 수 없는 위치';
-
-  return {
-    name,
-    source: 'kakao',
-    lat,
-    lon,
-    nx: 0, // will be filled by caller
-    ny: 0, // will be filled by caller
-    address,
-    raw: { addrJson, regJson },
-  };
-}
-
-async function reverseWithOSM(
-  lon: number,
-  lat: number,
-): Promise<ReverseResult | null> {
-  const url = new URL('https://nominatim.openstreetmap.org/reverse');
-  url.searchParams.set('format', 'jsonv2');
-  url.searchParams.set('lat', String(lat));
-  url.searchParams.set('lon', String(lon));
-  url.searchParams.set('accept-language', 'ko');
-  url.searchParams.set('addressdetails', '1');
-  url.searchParams.set('namedetails', '1');
-
-  const res = await fetch(url.toString(), {
-    headers: {
-      'User-Agent': 'fantasy-diary/1.0 (+https://example.com)',
-    },
-  });
-  if (!res.ok) return null;
-  const json = (await res.json()) as {
-    display_name?: string;
-    name?: string;
-    namedetails?: Record<string, string>;
-    address?: Record<string, string>;
-  };
-
-  const nameKo = json.namedetails?.['name:ko']?.trim();
-  const name = nameKo || json.name || json.display_name || '알 수 없는 위치';
-  const address = json.display_name;
-
-  return {
-    name,
-    source: 'osm',
-    lat,
-    lon,
-    nx: 0, // will be filled by caller
-    ny: 0, // will be filled by caller
-    address,
-    raw: json,
-  };
-}
+// External reverse geocoding removed. All place inference is AI-only using geometry hints.
 
 interface ToolDef<TArgs, TResult> {
   name: string;
@@ -229,7 +92,6 @@ interface ToolDef<TArgs, TResult> {
 const zGridArgs = z.object({
   nx: z.number().int(),
   ny: z.number().int(),
-  prefer: z.enum(['kakao', 'osm']).optional(),
 });
 
 const zGridPlaceWeatherArgs = z.object({
@@ -262,7 +124,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { nx, ny } = zGridArgs.omit({ prefer: true }).parse(rawArgs);
+      const { nx, ny } = zGridArgs.parse(rawArgs);
       const { lat, lon } = gridToLatLon(nx, ny);
 
       return { lat, lon, nx, ny };
@@ -271,38 +133,52 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   {
     name: 'geo.gridToName',
     description:
-      'Convert KMA DFS grid (nx, ny) to a detailed Korean place name using reverse geocoding (Kakao if available, otherwise OSM).',
+      'Infer a Korean place name from KMA DFS grid (nx, ny) using only geometry (no external geocoding). Returns AI hints for naming.',
     inputSchema: {
       type: 'object',
       required: ['nx', 'ny'],
       properties: {
         nx: { type: 'integer' },
         ny: { type: 'integer' },
-        prefer: {
-          type: 'string',
-          enum: ['kakao', 'osm'],
-          description: 'Force specific provider if desired',
-        },
       },
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { nx, ny, prefer } = zGridArgs.parse(rawArgs);
+      const { nx, ny } = zGridArgs.parse(rawArgs);
       const { lat, lon } = gridToLatLon(nx, ny);
 
-      let result: ReverseResult | null = null;
-      if (prefer === 'kakao') result = await reverseWithKakao(lon, lat);
-      if (!result && prefer === 'osm') result = await reverseWithOSM(lon, lat);
-      if (!result) {
-        // auto: kakao first if key exists, else osm
-        result =
-          (await reverseWithKakao(lon, lat)) ??
-          (await reverseWithOSM(lon, lat));
-      }
+      const corner = (dx: number, dy: number) => gridToLatLon(nx + dx, ny + dy);
+      const bbox = {
+        nw: corner(-0.5, -0.5),
+        ne: corner(0.5, -0.5),
+        se: corner(0.5, 0.5),
+        sw: corner(-0.5, 0.5),
+      };
 
-      if (!result) throw new Error('역지오코딩 실패');
+      const dms = (value: number, pos: 'lat' | 'lon') => {
+        const abs = Math.abs(value);
+        const deg = Math.floor(abs);
+        const minFloat = (abs - deg) * 60;
+        const min = Math.floor(minFloat);
+        const sec = Math.round((minFloat - min) * 60 * 100) / 100;
+        const hemi = pos === 'lat' ? (value >= 0 ? 'N' : 'S') : value >= 0 ? 'E' : 'W';
 
-      return { ...result, nx, ny };
+        return `${deg}°${min}'${sec}" ${hemi}`;
+      };
+
+      const hints = [
+        `WGS84 좌표(lat, lon): ${lat.toFixed(6)}, ${lon.toFixed(6)} (DMS: ${dms(lat, 'lat')}, ${dms(lon, 'lon')})`,
+        '이 응답은 KMA DFS 격자(약 5km 해상도) 기반입니다. 행정구 경계와 정확히 일치하지 않을 수 있습니다.',
+        '지명을 생성할 때 lat/lon과 bbox 모서리 좌표를 활용해 가장 가까운 동/읍/면 또는 지명 후보를 추론하세요.',
+        '도/시/구/동 순으로 구체화하고, 건물명/도로명은 외부 API 없이 근거가 있을 때만 기술하세요.',
+      ];
+
+      return {
+        grid: { nx, ny },
+        latlon: { lat, lon },
+        bbox,
+        ai: { hints },
+      };
     },
   },
   {

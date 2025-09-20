@@ -1,0 +1,6 @@
+- `bun install` – install dependencies (project pins Bun 1.2.18).
+- `bun run dev` – generate API types then start Next.js dev server on port 3019 (via concurrently).
+- `bun run build` / `bun run start` – production build and serve.
+- `bun run lint` – run Next.js/ESLint checks.
+- `bun run test` or `bun run test:watch` – execute Jest test suite.
+- `bun run gen:api` – regenerate Supabase OpenAPI SDK used by MCP routes.

@@ -1,0 +1,5 @@
+- TypeScript with Next.js App Router; prefer explicit typing, Zod schemas for runtime validation, and never use `any` (ESLint warns on explicit any).
+- Import ordering enforced by `eslint-plugin-simple-import-sort`;  blank line before `return` (padding-line-between-statements rule).
+- Runtime code favors early returns for invalid states and uses helper `ok`/`fail` for JSON-RPC responses.
+- Edge APIs stick to async functions, `NextResponse.json`, and JSON-RPC 2.0 shapes defined in `src/types/mcp.ts`.
+- Env access via `ENV` object; avoid direct `process.env` outside env module.

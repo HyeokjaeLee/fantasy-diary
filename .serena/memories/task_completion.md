@@ -1,0 +1,4 @@
+- After implementing changes, run `bun run lint` and relevant `bun run test` targets before handoff.
+- Ensure API routes respect JSON-RPC schema (`ok`/`fail` helpers) and validate inputs via Zod.
+- Verify new MCP tools expose JSON schema metadata and avoid relying on missing env vars (use `ENV`).
+- Update docs or environment examples if new env vars or endpoints are introduced.
