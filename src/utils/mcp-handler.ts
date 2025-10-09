@@ -85,14 +85,12 @@ export const handleMcpRequest = async ({
 
       const result = await tool.handler(parsed.data.arguments ?? {});
 
-      return NextResponse.json(
-        NextResponse.jsonRpcOk({
-          id: request.id,
-          result: {
-            content: [{ type: 'text', text: JSON.stringify(result) }],
-          },
-        }),
-      );
+      return NextResponse.jsonRpcOk({
+        id: request.id,
+        result: {
+          content: [{ type: 'text', text: JSON.stringify(result) }],
+        },
+      });
     }
 
     return NextResponse.jsonRpcFail({

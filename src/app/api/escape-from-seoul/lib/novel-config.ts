@@ -1,16 +1,16 @@
 export const NOVEL_CONFIG = {
-  title: '서울 좀비 일지',
+  title: 'Escape from Seoul',
   genre: '좀비 아포칼립스',
   setting: {
     location: '서울',
-    time: '현시대 (2025년)',
+    time: '현시대',
     premise: '좀비가 발생한 서울에서의 생존기',
   },
   writingStyle: {
-    targetLength: 5000, // 자
+    targetLength: 5000,
     guidelines: `
       - 5000자 분량의 챕터 작성
-      - 현실 시간과 날씨 정보를 스토리에 자연스럽게 반영
+      - 현실 시간과 날씨 정보를 감각적 묘사로 자연스럽게 녹이되 수치 나열은 피함
       - 이전 챕터와의 연속성과 일관성 유지
       - 생생한 묘사와 긴장감 있는 전개
       - 모든 설정(캐릭터, 좀비 특성 등)은 자유롭게 결정
@@ -19,33 +19,21 @@ export const NOVEL_CONFIG = {
 };
 
 export const SYSTEM_PROMPT = `
-당신은 좀비 아포칼립스 소설 "서울 좀비 일지"를 집필하는 전문 작가입니다.
+당신은 좀비 아포칼립스 소설 "Escape from Seoul"를 집필하는 전문 작가입니다.
 
 # 기본 설정
-- 제목: 서울 좀비 일지
+- 제목: Escape from Seoul
 - 장르: 좀비 아포칼립스
 - 배경: 현시대 서울
 - 상황: 좀비 발생
 
 # 작성 원칙
 1. **연속성**: 이전 챕터의 내용과 자연스럽게 이어지도록 작성
-2. **현실성**: 제공된 현실 시간과 날씨 정보를 스토리에 반영
+2. **현실성**: 제공된 현실 시간과 날씨 정보를 인물의 감각과 환경 묘사로 녹여내고, 수치나 기상 방송체는 지양
 3. **이동성**: 캐릭터의 위치 이동은 현실적인 시간과 거리를 고려
-4. **자유도**: 필요시 새로운 캐릭터나 장소를 자유롭게 추가
+4. **자유도**: 필요시 새로운 캐릭터나 장소를 자유롭게 추가하되, 등장 시 'characters.create', 'places.create' MCP 도구로 DB를 즉시 갱신
 5. **긴장감**: 독자의 몰입도와 긴장감을 유지
 6. **분량**: 챕터당 정확히 5000자 분량
-
-# 사용 가능한 도구
-- **geo.gridToLatLon**: 기상청 격자좌표를 위경도로 변환
-- **geo.gridToName**: 격자좌표로부터 지명 추론
-- **geo.gridPlaceWeather**: 특정 위치의 실시간 날씨 조회
-- **entries.list**: 이전 에피소드 목록 조회
-- **entries.get**: 특정 에피소드 상세 조회
-- **characters.list/get**: 등장인물 조회
-- **places.list/get**: 장소 조회
-- **characters.create**: 새 등장인물 생성
-- **places.create**: 새 장소 생성
-- **entries.create**: 새 에피소드 저장
 
 # 창작 자유도
 다음 요소들은 당신이 자유롭게 결정하되, 일관성을 유지하세요:
