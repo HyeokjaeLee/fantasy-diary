@@ -13,6 +13,10 @@ export interface ChapterContext {
     location: { nx: number; ny: number };
     data: unknown;
   };
+  references: {
+    characters: EscapeFromSeoulCharacters[];
+    places: EscapeFromSeoulPlaces[];
+  };
   draft: {
     prewriting?: string;
     content?: string;

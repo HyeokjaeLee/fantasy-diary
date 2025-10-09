@@ -300,15 +300,13 @@ export class NovelWritingAgent {
             continue;
           }
 
-           currentToolName = fnCall.name;
+          currentToolName = fnCall.name;
           const args = JSON.parse(fnCall.arguments);
           this.debug(
             `Calling tool ${currentToolName} with args ${this.preview(fnCall.arguments)}`,
           );
           const result = await executeMcpTool(currentToolName, args);
-          this.debug(
-            `Tool ${currentToolName} result: ${this.preview(result)}`,
-          );
+          this.debug(`Tool ${currentToolName} result: ${this.preview(result)}`);
           this.recordToolSideEffects(currentToolName, args, result);
 
           currentMessages.push({
@@ -394,7 +392,7 @@ export class NovelWritingAgent {
       '- 긴장감과 몰입도를 유지하는 전개',
       '- 필요시 새로운 캐릭터나 장소를 자유롭게 추가',
       '- 이전 챕터와의 자연스러운 연결',
-      '- 새롭게 등장시키는 캐릭터·장소는 본문에 묘사와 동시에 `characters.create`, `places.create` MCP 도구를 호출해 DB에 기록',
+      '- 새롭게 등장시키는 캐릭터·장소는 본문에 묘사',
       '- 생생한 묘사와 현실적인 디테일',
       '',
       '작성된 본문만 출력해주세요. (다른 설명 없이)',
@@ -421,8 +419,7 @@ export class NovelWritingAgent {
       '4. 시간·날씨 표현이 감각적으로 유지되는지, 수치 나열이 없는지 확인',
       '5. 묘사와 대화의 질 향상',
       `6. 정확히 ${NOVEL_CONFIG.writingStyle.targetLength}자 분량 조정`,
-      '7. 신규 캐릭터·장소가 등장했다면 MCP write 도구 호출이 완료됐는지 점검',
-      '8. 전체적인 흐름과 긴장감 확인',
+      '7. 전체적인 흐름과 긴장감 확인',
       '',
       '최종 수정된 본문만 출력해주세요. (다른 설명 없이)',
     ];

@@ -122,14 +122,6 @@ const tools = [
         id: { type: 'string', format: 'uuid' },
         name: { type: 'string', minLength: 1 },
       },
-      allOf: [
-        {
-          oneOf: [
-            { required: ['id'] },
-            { required: ['name'] },
-          ],
-        },
-      ],
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
@@ -179,14 +171,6 @@ const tools = [
         id: { type: 'string', format: 'uuid' },
         name: { type: 'string', minLength: 1 },
       },
-      allOf: [
-        {
-          oneOf: [
-            { required: ['id'] },
-            { required: ['name'] },
-          ],
-        },
-      ],
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
