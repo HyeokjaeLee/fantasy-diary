@@ -11,6 +11,7 @@ import {
   postEscapeFromSeoulPlaces,
 } from '@supabase-api/sdk.gen';
 import type { JSONSchema4 } from 'json-schema';
+import { nanoid } from 'nanoid';
 import { z } from 'zod';
 
 import { ENV } from '@/env';
@@ -35,7 +36,7 @@ const configureSupabaseRest = () => {
     baseUrl,
     headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
   });
-}
+};
 
 interface ToolDef<TArgs, TResult> {
   name: string;
@@ -49,46 +50,37 @@ interface ToolDef<TArgs, TResult> {
 const zId = z.object({ id: z.string().uuid() });
 
 // Entries
-const zEntriesCreate = z
-  .object({
-    content: z.string(),
-    id: z.string().uuid().optional(),
-  })
-  .passthrough();
-const zEntriesUpdate = z
-  .object({
-    id: z.string().uuid(),
-    content: z.string(),
-  })
-  .passthrough();
+const zEntriesCreate = z.looseObject({
+  content: z.string(),
+  id: z.uuid(),
+});
+
+const zEntriesUpdate = z.looseObject({
+  id: z.uuid(),
+  content: z.string(),
+});
 
 // Characters
-const zCharactersCreate = z
-  .object({
-    name: z.string(),
-    id: z.string().uuid().optional(),
-  })
-  .passthrough();
-const zCharactersUpdate = z
-  .object({
-    id: z.string().uuid(),
-    name: z.string(),
-  })
-  .passthrough();
+const zCharactersCreate = z.looseObject({
+  name: z.string(),
+  id: z.uuid(),
+});
+
+const zCharactersUpdate = z.looseObject({
+  id: z.uuid(),
+  name: z.string(),
+});
 
 // Places
-const zPlacesCreate = z
-  .object({
-    name: z.string(),
-    id: z.string().uuid().optional(),
-  })
-  .passthrough();
-const zPlacesUpdate = z
-  .object({
-    id: z.string().uuid(),
-    name: z.string(),
-  })
-  .passthrough();
+const zPlacesCreate = z.looseObject({
+  name: z.string(),
+  id: z.uuid(),
+});
+
+const zPlacesUpdate = z.looseObject({
+  id: z.uuid(),
+  name: z.string(),
+});
 
 const tools: Array<ToolDef<unknown, unknown>> = [
   // entries.*
@@ -107,7 +99,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     },
     handler: async (raw: unknown) => {
       const parsed = zEntriesCreate.parse(raw);
-      const body = { id: parsed.id ?? crypto.randomUUID(), ...parsed };
+      const body = { ...parsed, id: parsed.id ?? nanoid() };
       configureSupabaseRest();
       const { data, error } = await postEscapeFromSeoulEntries({
         headers: { Prefer: 'return=representation' },
@@ -188,7 +180,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     },
     handler: async (raw: unknown) => {
       const parsed = zCharactersCreate.parse(raw);
-      const body = { id: parsed.id ?? crypto.randomUUID(), ...parsed };
+      const body = { ...parsed, id: parsed.id ?? nanoid() };
       configureSupabaseRest();
       const { data, error } = await postEscapeFromSeoulCharacters({
         headers: { Prefer: 'return=representation' },
@@ -274,7 +266,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     },
     handler: async (raw: unknown) => {
       const parsed = zPlacesCreate.parse(raw);
-      const body = { id: parsed.id ?? crypto.randomUUID(), ...parsed };
+      const body = { ...parsed, id: parsed.id ?? nanoid() };
       configureSupabaseRest();
       const { data, error } = await postEscapeFromSeoulPlaces({
         headers: { Prefer: 'return=representation' },
