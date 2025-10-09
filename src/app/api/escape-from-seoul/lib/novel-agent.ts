@@ -4,6 +4,10 @@ import type {
   ChatCompletionMessageParam,
 } from 'openai/resources/chat/completions';
 
+import type {
+  EscapeFromSeoulCharacters,
+  EscapeFromSeoulPlaces,
+} from '@supabase-api/types.gen';
 import { ENV } from '@/env';
 
 import type { ChapterContext, PhaseResult } from '../types/novel';
@@ -70,6 +74,164 @@ export class NovelWritingAgent {
     } catch {
       return null;
     }
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return (
+      typeof value === 'object' && value !== null && !Array.isArray(value)
+    );
+  }
+
+  private stringOr(value: unknown, fallback = ''): string {
+    return typeof value === 'string' ? value : fallback;
+  }
+
+  private stringArrayOr(value: unknown, fallback: string[] = []): string[] {
+    if (!Array.isArray(value)) {
+      return fallback;
+    }
+
+    const items = value
+      .map((item) => (typeof item === 'string' ? item : null))
+      .filter((item): item is string => item !== null);
+
+    return items.length > 0 ? items : fallback;
+  }
+
+  private mergeCharacterReference(
+    source: Record<string, unknown>,
+    fallback?: EscapeFromSeoulCharacters,
+  ): EscapeFromSeoulCharacters | null {
+    const base = fallback ?? null;
+    const id = this.stringOr(source.id, base?.id ?? '').trim();
+    const name = this.stringOr(source.name, base?.name ?? '').trim();
+    if (!id || !name) {
+      return null;
+    }
+    const nowIso = new Date().toISOString();
+    const firstAppeared = this.stringOr(
+      source.first_appeared_at,
+      base?.first_appeared_at ?? '',
+    );
+    const lastUpdated = this.stringOr(
+      source.last_updated,
+      base?.last_updated ?? '',
+    );
+
+    return {
+      id,
+      name,
+      personality: this.stringOr(source.personality, base?.personality ?? ''),
+      background: this.stringOr(source.background, base?.background ?? ''),
+      appearance: this.stringOr(source.appearance, base?.appearance ?? ''),
+      current_location: this.stringOr(
+        source.current_location,
+        base?.current_location ?? '',
+      ),
+      relationships:
+        source.relationships !== undefined
+          ? source.relationships
+          : base?.relationships ?? [],
+      major_events: this.stringArrayOr(
+        source.major_events,
+        base?.major_events ?? [],
+      ),
+      character_traits: this.stringArrayOr(
+        source.character_traits,
+        base?.character_traits ?? [],
+      ),
+      current_status: this.stringOr(
+        source.current_status,
+        base?.current_status ?? '',
+      ),
+      first_appeared_at: firstAppeared || base?.first_appeared_at || nowIso,
+      last_updated: lastUpdated || base?.last_updated || nowIso,
+    };
+  }
+
+  private mergePlaceReference(
+    source: Record<string, unknown>,
+    fallback?: EscapeFromSeoulPlaces,
+  ): EscapeFromSeoulPlaces | null {
+    const base = fallback ?? null;
+    const id = this.stringOr(source.id, base?.id ?? '').trim();
+    const name = this.stringOr(source.name, base?.name ?? '').trim();
+    if (!id || !name) {
+      return null;
+    }
+
+    return {
+      id,
+      name,
+      current_situation: this.stringOr(
+        source.current_situation,
+        base?.current_situation ?? '',
+      ),
+    };
+  }
+
+  private summarizeReferences(): {
+    characters: string[];
+    places: string[];
+  } {
+    const characterLines: string[] = [];
+    const placeLines: string[] = [];
+    const maxItems = 20;
+
+    if (this.context.references.characters.length === 0) {
+      characterLines.push('- (등록된 캐릭터 없음 → 새 인물을 창작해야 합니다)');
+    } else {
+      this.context.references.characters
+        .slice(0, maxItems)
+        .forEach((character) => {
+          const summary: string[] = [];
+          if (character.name) summary.push(character.name);
+          if (character.current_status)
+            summary.push(`상태: ${character.current_status}`);
+          if (character.personality)
+            summary.push(`성격: ${character.personality}`);
+          if (character.current_location)
+            summary.push(`위치: ${character.current_location}`);
+          characterLines.push(`- ${summary.join(' | ')}`);
+        });
+      if (this.context.references.characters.length > maxItems) {
+        characterLines.push(
+          `- ... (${this.context.references.characters.length - maxItems}명 추가)`,
+        );
+      }
+    }
+
+    if (this.context.references.places.length === 0) {
+      placeLines.push('- (등록된 장소 없음 → 새 배경을 창작해야 합니다)');
+    } else {
+      this.context.references.places.slice(0, maxItems).forEach((place) => {
+        const summary: string[] = [];
+        if (place.name) summary.push(place.name);
+        if (place.current_situation)
+          summary.push(`상황: ${place.current_situation}`);
+        placeLines.push(`- ${summary.join(' | ')}`);
+      });
+      if (this.context.references.places.length > maxItems) {
+        placeLines.push(
+          `- ... (${this.context.references.places.length - maxItems}곳 추가)`,
+        );
+      }
+    }
+
+    return { characters: characterLines, places: placeLines };
+  }
+
+  private buildReferenceSections(): string[] {
+    const sections: string[] = [];
+    const summaries = this.summarizeReferences();
+
+    sections.push('## 기존 등장인물');
+    sections.push(...summaries.characters);
+    sections.push('');
+    sections.push('## 기존 장소');
+    sections.push(...summaries.places);
+
+    return sections;
   }
 
   private upsertCharacter(data: Record<string, unknown>) {
@@ -154,6 +316,50 @@ export class NovelWritingAgent {
     this.debug(`Tracked place draft: ${this.preview(JSON.stringify(next))}`);
   }
 
+  private updateCharacterReference(data: Record<string, unknown>) {
+    const references = this.context.references.characters;
+    const index = references.findIndex(
+      (item) =>
+        (typeof data.id === 'string' && item.id === data.id) ||
+        (typeof data.name === 'string' &&
+          item.name === data.name.trim() &&
+          item.name.length > 0),
+    );
+    const current = index >= 0 ? references[index] : undefined;
+    const normalized = this.mergeCharacterReference(data, current);
+    if (!normalized) {
+      return;
+    }
+
+    if (index >= 0) {
+      references[index] = normalized;
+    } else {
+      references.push(normalized);
+    }
+  }
+
+  private updatePlaceReference(data: Record<string, unknown>) {
+    const references = this.context.references.places;
+    const index = references.findIndex(
+      (item) =>
+        (typeof data.id === 'string' && item.id === data.id) ||
+        (typeof data.name === 'string' &&
+          item.name === data.name.trim() &&
+          item.name.length > 0),
+    );
+    const current = index >= 0 ? references[index] : undefined;
+    const normalized = this.mergePlaceReference(data, current);
+    if (!normalized) {
+      return;
+    }
+
+    if (index >= 0) {
+      references[index] = normalized;
+    } else {
+      references.push(normalized);
+    }
+  }
+
   private recordToolSideEffects(
     toolName: string,
     args: unknown,
@@ -162,7 +368,9 @@ export class NovelWritingAgent {
     const canonicalName = toolName.replace(/_/g, '.');
     if (
       canonicalName !== 'characters.create' &&
-      canonicalName !== 'places.create'
+      canonicalName !== 'characters.update' &&
+      canonicalName !== 'places.create' &&
+      canonicalName !== 'places.update'
     ) {
       return;
     }
@@ -177,15 +385,109 @@ export class NovelWritingAgent {
       ...(resultRecord ?? {}),
     };
 
-    if (canonicalName === 'characters.create') {
+    if (
+      canonicalName === 'characters.create' ||
+      canonicalName === 'characters.update'
+    ) {
       this.upsertCharacter(merged);
+      this.updateCharacterReference(merged);
     } else if (canonicalName === 'places.create') {
       this.upsertPlace(merged);
+      this.updatePlaceReference(merged);
+    } else if (canonicalName === 'places.update') {
+      this.upsertPlace(merged);
+      this.updatePlaceReference(merged);
     }
+  }
+
+  private async loadReferenceData(forceReload = false): Promise<void> {
+    const needsCharacters =
+      forceReload || this.context.references.characters.length === 0;
+    const needsPlaces =
+      forceReload || this.context.references.places.length === 0;
+    if (!needsCharacters && !needsPlaces) {
+      return;
+    }
+
+    try {
+      const [charactersRaw, placesRaw] = await Promise.all([
+        executeMcpTool('characters_list', { limit: 100 }),
+        executeMcpTool('places_list', { limit: 100 }),
+      ]);
+      const parsedCharacters = this.tryParseJson(charactersRaw);
+      const parsedPlaces = this.tryParseJson(placesRaw);
+
+      if (needsCharacters) {
+        const characters = Array.isArray(parsedCharacters)
+          ? parsedCharacters
+              .map((item) =>
+                this.isRecord(item)
+                  ? this.mergeCharacterReference(item)
+                  : null,
+              )
+              .filter(
+                (item): item is EscapeFromSeoulCharacters => item !== null,
+              )
+          : [];
+        this.context.references.characters = characters;
+      }
+
+      if (needsPlaces) {
+        const places = Array.isArray(parsedPlaces)
+          ? parsedPlaces
+              .map((item) =>
+                this.isRecord(item)
+                  ? this.mergePlaceReference(item)
+                  : null,
+              )
+              .filter((item): item is EscapeFromSeoulPlaces => item !== null)
+          : [];
+        this.context.references.places = places;
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown reference load error';
+      this.debug(`Failed to load reference data: ${message}`);
+    }
+  }
+
+  async reconcileEntities(): Promise<void> {
+    await this.loadReferenceData(true);
+    const systemPrompt =
+      '당신은 "서울 좀비 일지" 프로젝트의 데이터 정합성을 책임지는 기록 보조원입니다. 주 임무는 스토리에서 등장한 캐릭터와 장소가 Supabase DB에 모두 반영되도록 MCP 도구를 호출하는 것입니다.';
+    const summaries = this.summarizeReferences();
+
+    const prompt = [
+      '# Entity Reconciliation',
+      '',
+      '## 기존 등장인물',
+      ...summaries.characters,
+      '',
+      '## 기존 장소',
+      ...summaries.places,
+      '',
+      '## 최신 본문',
+      this.context.draft.content || '(본문 없음)',
+      '',
+      '## 지침',
+      '- 본문에서 새롭게 등장한 캐릭터나 장소가 기존 목록에 없으면 `characters.create` 또는 `places.create`를 호출해 기본 정보를 저장하세요.',
+      '- 기존 인물/장소의 속성이 본문 내용으로 갱신되어야 한다면 `characters.update` 또는 `places.update`로 최신 정보를 반영하세요.',
+      '- 모든 도구 호출 후에는 응답을 확인하고 오류가 있으면 수정해 다시 시도하세요.',
+      '- 추가 조치가 필요 없다면 도구를 호출하지 말고 \"OK\"라고만 답하세요.',
+    ].join('\n');
+
+    const messages: ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: prompt },
+    ];
+
+    await this.chatWithTools(messages);
+    await this.loadReferenceData(true);
   }
 
   // Phase 1: Prewriting (구상)
   async executePrewriting(): Promise<PhaseResult> {
+    await this.loadReferenceData(true);
     const prompt = this.buildPrewritingPrompt();
     this.debug(`Prewriting prompt ready: ${this.preview(prompt)}`);
     const messages: ChatCompletionMessageParam[] = [
@@ -208,6 +510,7 @@ export class NovelWritingAgent {
 
   // Phase 2: Drafting (작성)
   async executeDrafting(): Promise<PhaseResult> {
+    await this.loadReferenceData(true);
     const prompt = this.buildDraftingPrompt();
     this.debug(`Drafting prompt ready: ${this.preview(prompt)}`);
     const messages: ChatCompletionMessageParam[] = [
@@ -230,6 +533,7 @@ export class NovelWritingAgent {
 
   // Phase 3: Revision (수정)
   async executeRevision(): Promise<PhaseResult> {
+    await this.loadReferenceData(true);
     const prompt = this.buildRevisionPrompt();
     this.debug(`Revision prompt ready: ${this.preview(prompt)}`);
     const messages: ChatCompletionMessageParam[] = [
@@ -362,6 +666,9 @@ export class NovelWritingAgent {
     parts.push('2. 주요 캐릭터의 현재 위치 파악');
     parts.push(
       '3. 해당 위치의 실시간 날씨 조회 (geo.gridPlaceWeather) 후 체감 묘사로 활용할 요소 정리',
+    );
+    parts.push(
+      '   - baseDate/baseTime은 HHmm 형식이며 10분 단위 값만 허용됩니다(예: 0130). 제공하지 않으면 자동 계산되며, 재시도 시에는 동일한 값으로 호출하세요.',
     );
     parts.push('4. 시간 경과와 이동 가능 거리 계산');
     parts.push('5. 다음 챕터의 주요 사건과 전개 방향 결정');

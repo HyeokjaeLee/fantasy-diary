@@ -90,6 +90,9 @@ export async function POST(
     const revisionResult = await agent.executeRevision();
     const finalContent = revisionResult.output;
 
+    console.log(`[${chapterId}] Reconciling entities...`);
+    await agent.reconcileEntities();
+
     // 10. Save to database
     console.log(`[${chapterId}] Saving to database...`);
     await saveChapterToDb(chapterId, finalContent, context);
@@ -296,13 +299,76 @@ async function saveChapterToDb(
     typeof value === 'string' ? value.trim() : undefined;
 
   // 1. Save entry
+  const trimmedContent = content.trim();
+  const summary = trimmedContent.replace(/\s+/g, ' ').slice(0, 280);
+  const weatherRecord =
+    context.weather &&
+    typeof context.weather.data === 'object' &&
+    context.weather.data !== null &&
+    !Array.isArray(context.weather.data)
+      ? (context.weather.data as Record<string, unknown>)
+      : null;
+  const weatherConditionCandidates: Array<unknown> = weatherRecord
+    ? [
+        weatherRecord.condition,
+        weatherRecord.description,
+        weatherRecord.summary,
+      ]
+    : [];
+  const weatherCondition =
+    weatherConditionCandidates.find(
+      (value): value is string => typeof value === 'string' && value.length > 0,
+    ) ?? '';
+  const temperatureCandidate = weatherRecord
+    ? weatherRecord.temperature ?? weatherRecord.temp ?? weatherRecord.feelsLike
+    : undefined;
+  const parsedTemperature =
+    typeof temperatureCandidate === 'number'
+      ? Math.round(temperatureCandidate)
+      : typeof temperatureCandidate === 'string'
+        ? Number.parseInt(temperatureCandidate, 10)
+        : Number.NaN;
+  const weatherTemperature = Number.isFinite(parsedTemperature)
+    ? parsedTemperature
+    : 0;
+  const primaryLocationCandidate =
+    context.draft.places[0]?.name ??
+    context.references.places[0]?.name ??
+    '';
+  const primaryLocation =
+    typeof primaryLocationCandidate === 'string'
+      ? primaryLocationCandidate
+      : '';
+  const appearedCharacters = context.draft.characters
+    .map((character) =>
+      typeof character.name === 'string' ? character.name.trim() : '',
+    )
+    .filter((name): name is string => name.length > 0);
+  const storyTagsSet = new Set<string>([`chapter:${id}`]);
+  if (primaryLocation) {
+    storyTagsSet.add(`location:${primaryLocation}`);
+  }
+  for (const name of appearedCharacters) {
+    storyTagsSet.add(`character:${name}`);
+  }
+  const nextContext =
+    typeof context.draft.prewriting === 'string'
+      ? context.draft.prewriting.replace(/\s+/g, ' ').slice(0, 280)
+      : '';
   const entryArgs = {
     content,
     created_at: context.currentTime.toISOString(),
-    story_tags: [`chapter:${id}`],
-    ...(context.previousChapter?.id
-      ? { previous_context: context.previousChapter.id }
-      : {}),
+    summary,
+    weather_condition: weatherCondition || 'unknown',
+    weather_temperature: weatherTemperature,
+    location: primaryLocation || 'unknown',
+    mood: 'neutral',
+    major_events: [] as string[],
+    appeared_characters: appearedCharacters,
+    emotional_tone: 'neutral',
+    story_tags: Array.from(storyTagsSet),
+    previous_context: context.previousChapter?.id ?? '',
+    next_context_hints: nextContext,
   };
   await callWriteTool('entries.create', entryArgs);
 
