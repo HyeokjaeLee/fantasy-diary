@@ -13,17 +13,18 @@ import {
 
 export const runtime = 'edge';
 
-function ok<T>(id: JsonRpcId, result: T): JsonRpcSuccess<T> {
-  return { jsonrpc: '2.0', id, result };
-}
-function fail(
+const ok = <T>(id: JsonRpcId, result: T): JsonRpcSuccess<T> => ({
+  jsonrpc: '2.0',
+  id,
+  result,
+});
+
+const fail = (
   id: JsonRpcId,
   code: number,
   message: string,
   data?: unknown,
-): JsonRpcFailure {
-  return { jsonrpc: '2.0', id, error: { code, message, data } };
-}
+): JsonRpcFailure => ({ jsonrpc: '2.0', id, error: { code, message, data } });
 
 // KMA DFS (LCC) constants
 const RE = 6371.00877; // 지구 반경 (km)
@@ -161,7 +162,8 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         const minFloat = (abs - deg) * 60;
         const min = Math.floor(minFloat);
         const sec = Math.round((minFloat - min) * 60 * 100) / 100;
-        const hemi = pos === 'lat' ? (value >= 0 ? 'N' : 'S') : value >= 0 ? 'E' : 'W';
+        const hemi =
+          pos === 'lat' ? (value >= 0 ? 'N' : 'S') : value >= 0 ? 'E' : 'W';
 
         return `${deg}°${min}'${sec}" ${hemi}`;
       };
