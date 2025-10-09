@@ -11,7 +11,7 @@ export interface ToolDef<TInput = unknown, TOutput = unknown> {
   name: string;
   description?: string;
   inputSchema: object;
-  usageGuidelines?: string;
+  usageGuidelines?: string[];
   allowedPhases?: string[];
   handler: (args: TInput) => Promise<TOutput>;
 }

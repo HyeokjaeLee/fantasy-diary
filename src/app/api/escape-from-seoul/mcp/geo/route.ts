@@ -1,4 +1,3 @@
-import type { JSONSchema4 } from 'json-schema';
 import { z } from 'zod';
 
 import { fetchKmaUltraSrtNcst } from '@/app/api/external/kma';
