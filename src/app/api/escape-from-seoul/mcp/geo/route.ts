@@ -2,13 +2,7 @@ import type { JSONSchema4 } from 'json-schema';
 import { z } from 'zod';
 
 import { fetchKmaUltraSrtNcst } from '@/app/api/external/kma';
-import {
-  JsonRpcErrorCode,
-  JsonRpcErrorMessage,
-  zCallToolParams,
-  zJsonRpcRequest,
-} from '@/types/mcp';
-import { NextResponse } from '@/utils';
+import { handleMcpRequest, type ToolDef } from '@/utils';
 
 export const runtime = 'edge';
 
@@ -68,13 +62,6 @@ function gridToLatLon(nx: number, ny: number): LatLon {
 }
 
 // External reverse geocoding removed. All place inference is AI-only using geometry hints.
-
-interface ToolDef<TArgs, TResult> {
-  name: string;
-  description: string;
-  inputSchema: JSONSchema4;
-  handler: (args: TArgs) => Promise<TResult>;
-}
 
 const zGridArgs = z.object({
   nx: z.number().int(),
@@ -284,72 +271,5 @@ const tools: Array<ToolDef<unknown, unknown>> = [
 ];
 
 export async function POST(req: Request) {
-  let body: z.infer<typeof zJsonRpcRequest> | null = null;
-
-  try {
-    const request = zJsonRpcRequest.parse(await req.json());
-    body = request;
-    if (request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
-      return NextResponse.jsonRpcFail({
-        code: JsonRpcErrorCode.InvalidRequest,
-        message: JsonRpcErrorMessage.InvalidRequest,
-        id: request.id ?? null,
-      });
-    }
-
-    if (request.method === 'tools/list') {
-      return NextResponse.jsonRpcOk({
-        id: request.id,
-        result: {
-          tools: tools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            inputSchema: t.inputSchema,
-          })),
-        },
-      });
-    }
-
-    if (request.method === 'tools/call') {
-      const parsed = zCallToolParams.safeParse(request.params ?? {});
-      if (!parsed.success || !parsed.data.name)
-        return NextResponse.jsonRpcFail({
-          code: JsonRpcErrorCode.InvalidParams,
-          message: JsonRpcErrorMessage.InvalidParams,
-          id: request.id,
-        });
-
-      const tool = tools.find((t) => t.name === parsed.data.name);
-      if (!tool)
-        return NextResponse.jsonRpcFail({
-          code: JsonRpcErrorCode.ToolNotFound,
-          message: JsonRpcErrorMessage.ToolNotFound,
-          id: request.id,
-        });
-
-      const result = await tool.handler(parsed.data.arguments ?? {});
-
-      return NextResponse.json(
-        NextResponse.jsonRpcOk({
-          id: request.id,
-          result: {
-            content: [{ type: 'text', text: JSON.stringify(result) }],
-          },
-        }),
-      );
-    }
-
-    return NextResponse.jsonRpcFail({
-      code: JsonRpcErrorCode.MethodNotFound,
-      message: JsonRpcErrorMessage.MethodNotFound,
-      id: request.id,
-    });
-  } catch (e) {
-    return NextResponse.jsonRpcFail({
-      id: body?.id ?? null,
-      code: JsonRpcErrorCode.UnknownError,
-      message:
-        e instanceof Error ? e.message : JsonRpcErrorMessage.UnknownError,
-    });
-  }
+  return handleMcpRequest({ req, tools });
 }
