@@ -57,7 +57,7 @@ export async function getMcpToolsAsOpenAIFunctions(): Promise<
     }) => ({
       type: 'function' as const,
       function: {
-        name: tool.name,
+        name: tool.name.replace(/\./g, '_'), // Convert dots to underscores for OpenAI compatibility
         description: tool.description || '',
         parameters: tool.inputSchema,
       },
@@ -70,7 +70,9 @@ export async function executeMcpTool(
   toolName: string,
   args: unknown,
 ): Promise<string> {
-  const [category] = toolName.split('.');
+  // Convert underscores back to dots for MCP tool names
+  const mcpToolName = toolName.replace(/_/g, '.');
+  const [category] = mcpToolName.split('.');
 
   // 카테고리별 엔드포인트 매핑
   let endpoint: string;
@@ -78,7 +80,7 @@ export async function executeMcpTool(
     endpoint = 'geo';
   } else if (['entries', 'characters', 'places'].includes(category)) {
     // action에 따라 read-db vs write-db 결정
-    const action = toolName.split('.')[1];
+    const action = mcpToolName.split('.')[1];
     const isWrite = ['create', 'update', 'delete'].includes(action);
     endpoint = isWrite ? 'write-db' : 'read-db';
   } else {
@@ -87,7 +89,7 @@ export async function executeMcpTool(
 
   // MCP tools/call 실행
   const result = await callInternalMcp(endpoint, 'tools/call', {
-    name: toolName,
+    name: mcpToolName,
     arguments: args,
   });
 
