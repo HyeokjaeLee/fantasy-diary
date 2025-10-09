@@ -1,30 +1,16 @@
 import type { JSONSchema4 } from 'json-schema';
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { fetchKmaUltraSrtNcst } from '@/app/api/external/kma';
 import {
-  type JsonRpcFailure,
-  type JsonRpcId,
-  type JsonRpcSuccess,
+  JsonRpcErrorCode,
+  JsonRpcErrorMessage,
   zCallToolParams,
   zJsonRpcRequest,
 } from '@/types/mcp';
+import { NextResponse } from '@/utils';
 
 export const runtime = 'edge';
-
-const ok = <T>(id: JsonRpcId, result: T): JsonRpcSuccess<T> => ({
-  jsonrpc: '2.0',
-  id,
-  result,
-});
-
-const fail = (
-  id: JsonRpcId,
-  code: number,
-  message: string,
-  data?: unknown,
-): JsonRpcFailure => ({ jsonrpc: '2.0', id, error: { code, message, data } });
 
 // KMA DFS (LCC) constants
 const RE = 6371.00877; // 지구 반경 (km)
@@ -114,13 +100,14 @@ const zGridPlaceWeatherArgs = z.object({
 const tools: Array<ToolDef<unknown, unknown>> = [
   {
     name: 'geo.gridToLatLon',
-    description: 'Convert KMA DFS grid (nx, ny) to WGS84 latitude/longitude',
+    description:
+      '기상청 DFS 격자좌표(nx, ny)를 WGS84 위경도(lat, lon)로 변환합니다. 서울 지역의 격자 좌표를 실제 지도 좌표로 변환할 때 사용하세요.',
     inputSchema: {
       type: 'object',
       required: ['nx', 'ny'],
       properties: {
-        nx: { type: 'integer' },
-        ny: { type: 'integer' },
+        nx: { type: 'integer', description: '기상청 격자 X 좌표' },
+        ny: { type: 'integer', description: '기상청 격자 Y 좌표' },
       },
       additionalProperties: false,
     },
@@ -134,13 +121,13 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   {
     name: 'geo.gridToName',
     description:
-      'Infer a Korean place name from KMA DFS grid (nx, ny) using only geometry (no external geocoding). Returns AI hints for naming.',
+      '기상청 격자좌표로부터 한국 지명을 추론합니다. 격자의 위경도와 경계상자(bbox) 정보를 제공하며, AI가 서울 내 동/읍/면 이름을 추론할 수 있도록 힌트를 제공합니다. 장소 이름이 필요하지만 정확한 주소를 모를 때 사용하세요.',
     inputSchema: {
       type: 'object',
       required: ['nx', 'ny'],
       properties: {
-        nx: { type: 'integer' },
-        ny: { type: 'integer' },
+        nx: { type: 'integer', description: '기상청 격자 X 좌표' },
+        ny: { type: 'integer', description: '기상청 격자 Y 좌표' },
       },
       additionalProperties: false,
     },
@@ -186,18 +173,34 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   {
     name: 'geo.gridPlaceWeather',
     description:
-      'Return KMA ultra short-term observations and grid context (lat/lon, bbox, optional neighbors) with AI hints for place name inference. No external geocoding used.',
+      '특정 격자 위치의 기상청 초단기실황 날씨 데이터를 조회하고, 해당 위치의 좌표·경계상자·주변 격자 정보를 함께 제공합니다. 서울 지역의 실시간 날씨(기온, 강수, 습도 등)와 위치 맥락이 필요할 때 사용하세요. 장면에 날씨 묘사를 추가하거나 특정 지역의 기상 상황을 확인할 때 유용합니다.',
     inputSchema: {
       type: 'object',
       required: ['nx', 'ny'],
       properties: {
-        nx: { type: 'integer' },
-        ny: { type: 'integer' },
-        baseDate: { type: 'string', description: 'YYYYMMDD' },
-        baseTime: { type: 'string', description: 'HHmm' },
-        pageNumber: { type: 'integer' },
-        numberOfRows: { type: 'integer' },
-        neighbors: { type: 'boolean', description: 'Include 8-neighbor cells' },
+        nx: { type: 'integer', description: '기상청 격자 X 좌표' },
+        ny: { type: 'integer', description: '기상청 격자 Y 좌표' },
+        baseDate: {
+          type: 'string',
+          description: '조회 기준일 (YYYYMMDD 형식, 생략 시 오늘)',
+        },
+        baseTime: {
+          type: 'string',
+          description: '조회 기준시각 (HHmm 형식, 생략 시 가장 최근)',
+        },
+        pageNumber: {
+          type: 'integer',
+          description: '페이지 번호 (기본값: 1)',
+        },
+        numberOfRows: {
+          type: 'integer',
+          description: '한 페이지당 결과 수 (기본값: 10)',
+        },
+        neighbors: {
+          type: 'boolean',
+          description:
+            '주변 8개 격자의 좌표도 함께 반환할지 여부 (넓은 지역 날씨 비교 시 유용)',
+        },
       },
       additionalProperties: false,
     },
@@ -281,54 +284,72 @@ const tools: Array<ToolDef<unknown, unknown>> = [
 ];
 
 export async function POST(req: Request) {
+  let body: z.infer<typeof zJsonRpcRequest> | null = null;
+
   try {
-    const body = zJsonRpcRequest.parse(await req.json());
-    if (body.jsonrpc !== '2.0' || typeof body.method !== 'string') {
-      return NextResponse.json(fail(null, -32600, 'Invalid Request'), {
-        status: 400,
+    const request = zJsonRpcRequest.parse(await req.json());
+    body = request;
+    if (request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
+      return NextResponse.jsonRpcFail({
+        code: JsonRpcErrorCode.InvalidRequest,
+        message: JsonRpcErrorMessage.InvalidRequest,
+        id: request.id ?? null,
       });
     }
 
-    if (body.method === 'tools/list') {
-      return NextResponse.json(
-        ok(body.id, {
+    if (request.method === 'tools/list') {
+      return NextResponse.jsonRpcOk({
+        id: request.id,
+        result: {
           tools: tools.map((t) => ({
             name: t.name,
             description: t.description,
             inputSchema: t.inputSchema,
           })),
-        }),
-      );
+        },
+      });
     }
 
-    if (body.method === 'tools/call') {
-      const parsed = zCallToolParams.safeParse(body.params ?? {});
+    if (request.method === 'tools/call') {
+      const parsed = zCallToolParams.safeParse(request.params ?? {});
       if (!parsed.success || !parsed.data.name)
-        return NextResponse.json(fail(body.id, -32602, 'Missing tool name'), {
-          status: 400,
+        return NextResponse.jsonRpcFail({
+          code: JsonRpcErrorCode.InvalidParams,
+          message: JsonRpcErrorMessage.InvalidParams,
+          id: request.id,
         });
+
       const tool = tools.find((t) => t.name === parsed.data.name);
       if (!tool)
-        return NextResponse.json(
-          fail(body.id, -32601, `Unknown tool: ${parsed.data.name}`),
-          { status: 404 },
-        );
+        return NextResponse.jsonRpcFail({
+          code: JsonRpcErrorCode.ToolNotFound,
+          message: JsonRpcErrorMessage.ToolNotFound,
+          id: request.id,
+        });
+
       const result = await tool.handler(parsed.data.arguments ?? {});
 
       return NextResponse.json(
-        ok(body.id, {
-          content: [{ type: 'text', text: JSON.stringify(result) }],
+        NextResponse.jsonRpcOk({
+          id: request.id,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+          },
         }),
       );
     }
 
-    return NextResponse.json(
-      fail(body.id, -32601, `Unknown method: ${body.method}`),
-      { status: 404 },
-    );
+    return NextResponse.jsonRpcFail({
+      code: JsonRpcErrorCode.MethodNotFound,
+      message: JsonRpcErrorMessage.MethodNotFound,
+      id: request.id,
+    });
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown error';
-
-    return NextResponse.json(fail(null, -32000, message), { status: 500 });
+    return NextResponse.jsonRpcFail({
+      id: body?.id ?? null,
+      code: JsonRpcErrorCode.UnknownError,
+      message:
+        e instanceof Error ? e.message : JsonRpcErrorMessage.UnknownError,
+    });
   }
 }

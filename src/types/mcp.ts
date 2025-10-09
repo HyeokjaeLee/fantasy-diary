@@ -11,24 +11,6 @@ export interface JsonRpcRequest<TParams = unknown> {
   params?: TParams;
 }
 
-export interface JsonRpcError {
-  code: number;
-  message: string;
-  data?: unknown;
-}
-
-export interface JsonRpcSuccess<TResult> {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  result: TResult;
-}
-
-export interface JsonRpcFailure {
-  jsonrpc: '2.0';
-  id: JsonRpcId;
-  error: JsonRpcError;
-}
-
 // MCP Tool types (subset aligned with spec)
 export interface Tool {
   name: string;
@@ -54,7 +36,9 @@ export interface CallToolRequestParams {
 
 // tools/call result shape (minimum)
 export interface CallToolResult {
-  content: Array<{ type: 'text'; text: string } | { type: string; [k: string]: unknown }>;
+  content: Array<
+    { type: 'text'; text: string } | { type: string; [k: string]: unknown }
+  >;
   structuredContent?: unknown;
 }
 
@@ -71,3 +55,27 @@ export const zCallToolParams = z.object({
   name: z.string().min(1),
   arguments: z.record(z.string(), z.unknown()).optional(),
 });
+
+export enum JsonRpcErrorCode {
+  // JSON-RPC 2.0 표준 에러 코드
+  ParseError = -32700,
+  InvalidRequest = -32600,
+  MethodNotFound = -32601,
+  InvalidParams = -32602,
+  InternalError = -32603,
+  // 커스텀 서버 에러
+  ToolNotFound = -32001,
+  ToolExecutionError = -32002,
+  UnknownError = -32099,
+}
+
+export const JsonRpcErrorMessage = {
+  ParseError: '파싱 실패',
+  InvalidRequest: '잘못된 요청',
+  MethodNotFound: '메서드를 찾을 수 없음',
+  InvalidParams: '잘못된 파라미터',
+  InternalError: '내부 서버 오류',
+  ToolNotFound: '도구를 찾을 수 없음',
+  ToolExecutionError: '도구 실행 오류',
+  UnknownError: '알 수 없는 오류',
+} as const satisfies Record<keyof typeof JsonRpcErrorCode, string>;

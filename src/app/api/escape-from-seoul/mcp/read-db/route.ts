@@ -5,33 +5,18 @@ import {
   getEscapeFromSeoulPlaces,
 } from '@supabase-api/sdk.gen';
 import type { JSONSchema4 } from 'json-schema';
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { ENV } from '@/env';
 import {
-  type JsonRpcFailure,
-  type JsonRpcId,
-  type JsonRpcSuccess,
+  JsonRpcErrorCode,
+  JsonRpcErrorMessage,
   zCallToolParams,
   zJsonRpcRequest,
 } from '@/types/mcp';
+import { NextResponse } from '@/utils';
 
-export const runtime = 'edge';
-
-function ok<T>(id: JsonRpcId, result: T): JsonRpcSuccess<T> {
-  return { jsonrpc: '2.0', id, result };
-}
-function fail(
-  id: JsonRpcId,
-  code: number,
-  message: string,
-  data?: unknown,
-): JsonRpcFailure {
-  return { jsonrpc: '2.0', id, error: { code, message, data } };
-}
-
-function configureSupabaseRest(): void {
+const configureSupabaseRest = () => {
   const url = (ENV.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
   const baseUrl = `${url}/rest/v1`;
   const serviceRole = ENV.NEXT_SUPABASE_SERVICE_ROLE;
@@ -40,11 +25,12 @@ function configureSupabaseRest(): void {
       'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_SUPABASE_SERVICE_ROLE',
     );
   }
+
   client.setConfig({
     baseUrl,
     headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
   });
-}
+};
 
 interface ToolDef<TArgs, TResult> {
   name: string;
@@ -77,31 +63,30 @@ const usageJsonSchema: JSONSchema4 = {
 
 class UsagePhaseError extends Error {}
 
-function ensureUsagePhase(
+const ensureUsagePhase = (
   toolName: string,
   usage: UsageContext,
   allowed: UsagePhase[],
-): void {
-  if (allowed.includes(usage.phase)) {
-    return;
-  }
+) => {
+  if (allowed.includes(usage.phase)) return;
 
   throw new UsagePhaseError(
     `${toolName} 도구는 ${allowed.join(', ')} 단계에서만 호출할 수 있습니다.`,
   );
-}
+};
 
 // zod schemas for safe arg parsing
 const zListArgs = z.object({
   usage: zUsageContext,
   limit: z.number().int().min(1).max(100).optional(),
 });
-const zId = z.object({ usage: zUsageContext, id: z.string().uuid() });
+const zId = z.object({ usage: zUsageContext, id: z.uuid() });
 
-const tools: Array<ToolDef<unknown, unknown>> = [
+const tools = [
   {
     name: 'entries.list',
-    description: 'created_at 내림차순으로 일기 목록을 조회합니다.',
+    description:
+      '작성된 일기 목록을 최신순(created_at 내림차순)으로 조회합니다. 이전 사건의 흐름, 등장한 캐릭터, 방문한 장소 등 스토리 연속성을 확인할 때 사용하세요. prewriting(사전조사) 또는 drafting(초안작성) 단계에서만 호출 가능합니다.',
     usageGuidelines: [
       '새 장면을 시작하기 전에 최신 일기 흐름을 확인하려면 호출하세요.',
       '앞선 사건을 참조하지 않고 단락을 5개 이상 작성했다면 다시 호출해 일관성을 점검하세요.',
@@ -131,7 +116,8 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'entries.get',
-    description: '특정 ID에 해당하는 단일 일기를 조회합니다.',
+    description:
+      '특정 ID의 일기 내용을 상세 조회합니다. 이전 에피소드를 정확히 인용하거나 세부 묘사를 참조할 때 사용하세요. drafting(초안작성) 또는 revision(수정) 단계에서만 호출 가능합니다.',
     usageGuidelines: [
       '원문에서 특정 순간을 인용하거나 참조하려면 호출하세요.',
       '마지막 조회 후 30분 이상 지났다면 장면을 마무리하기 전에 다시 확인하세요.',
@@ -161,7 +147,8 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'characters.list',
-    description: '이름 오름차순으로 등장인물 목록을 조회합니다.',
+    description:
+      '등장인물 목록을 이름 오름차순으로 조회합니다. 캐릭터 구성을 파악하거나, 새 인물을 등장시키기 전 기존 인물과의 관계를 점검할 때 사용하세요. prewriting(사전조사) 또는 drafting(초안작성) 단계에서만 호출 가능합니다.',
     usageGuidelines: [
       '플롯을 설계하거나 초안을 쓰면서 전체 캐릭터 구성을 다시 확인하고 싶을 때 호출하세요.',
       '새로운 조연을 등장시키기 직전에 한 번 더 호출해 균형을 맞춰 주세요.',
@@ -191,7 +178,8 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'characters.get',
-    description: '특정 ID에 해당하는 캐릭터 정보를 조회합니다.',
+    description:
+      '특정 ID의 캐릭터 상세 정보를 조회합니다. 인물의 성격, 배경, 동기 등을 정확히 반영한 대사나 행동을 묘사할 때 사용하세요. drafting(초안작성) 또는 revision(수정) 단계에서만 호출 가능합니다.',
     usageGuidelines: [
       '해당 인물이 등장하는 대사나 내면 묘사를 쓰기 직전에 호출하세요.',
       '수정 단계에서 성격과 동기가 흔들리지 않는지 다시 확인할 때 사용하세요.',
@@ -221,7 +209,8 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'places.list',
-    description: '이름 오름차순으로 장소 목록을 조회합니다.',
+    description:
+      '장소 목록을 이름 오름차순으로 조회합니다. 다음 장면의 배경을 선택하거나, 스토리 전개에 따라 이동 가능한 장소를 파악할 때 사용하세요. prewriting(사전조사) 단계에서만 호출 가능합니다.',
     usageGuidelines: [
       '다음 장면에 쓸 후보 장소를 조사할 때 호출하세요.',
       '이야기 배경이 새로운 막이나 지역으로 넘어가면 다시 호출해 주세요.',
@@ -251,7 +240,8 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'places.get',
-    description: '특정 ID에 해당하는 장소 정보를 조회합니다.',
+    description:
+      '특정 ID의 장소 상세 정보를 조회합니다. 장소의 분위기, 구조, 특징 등을 정확히 묘사할 때 사용하세요. prewriting(사전조사) 또는 drafting(초안작성) 단계에서만 호출 가능합니다.',
     usageGuidelines: [
       '장소 묘사를 쓰기 직전에 호출해 세부 묘사가 설정과 맞는지 확인하세요.',
       '같은 장소 안에서도 시선이 크게 움직이면 다시 호출해 맥락을 조정하세요.',
@@ -279,7 +269,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       return Array.isArray(data) ? (data[0] ?? null) : null;
     },
   },
-];
+] satisfies Array<ToolDef<unknown, unknown>>;
 
 export async function POST(req: Request) {
   let body: JsonRpcRequest | null = null;
@@ -288,14 +278,17 @@ export async function POST(req: Request) {
     const request = zJsonRpcRequest.parse(await req.json());
     body = request;
     if (request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
-      return NextResponse.json(fail(null, -32600, '잘못된 요청입니다.'), {
-        status: 400,
+      return NextResponse.jsonRpcFail({
+        code: JsonRpcErrorCode.InvalidRequest,
+        message: 'Invalid Request',
+        id: request.id ?? null,
       });
     }
 
     if (request.method === 'tools/list') {
-      return NextResponse.json(
-        ok(request.id, {
+      return NextResponse.jsonRpcOk({
+        id: request.id,
+        result: {
           tools: tools.map((t) => ({
             name: t.name,
             description: t.description,
@@ -303,53 +296,49 @@ export async function POST(req: Request) {
             usageGuidelines: t.usageGuidelines,
             allowedPhases: t.allowedPhases,
           })),
-        }),
-      );
+        },
+      });
     }
 
     if (request.method === 'tools/call') {
       const parsed = zCallToolParams.safeParse(request.params ?? {});
       if (!parsed.success || !parsed.data.name)
-        return NextResponse.json(
-          fail(request.id, -32602, '도구 이름이 없습니다.'),
-          {
-            status: 400,
-          },
-        );
+        return NextResponse.jsonRpcFail({
+          code: JsonRpcErrorCode.ToolNotFound,
+          message: JsonRpcErrorMessage.ToolNotFound,
+          id: request.id,
+        });
+
       const tool = tools.find((t) => t.name === parsed.data.name);
       if (!tool)
-        return NextResponse.json(
-          fail(
-            request.id,
-            -32601,
-            `알 수 없는 도구입니다: ${parsed.data.name}`,
-          ),
-          { status: 404 },
-        );
+        return NextResponse.jsonRpcFail({
+          code: JsonRpcErrorCode.ToolNotFound,
+          message: JsonRpcErrorMessage.ToolNotFound,
+          id: request.id,
+        });
       const result = await tool.handler(parsed.data.arguments ?? {});
 
       return NextResponse.json(
-        ok(request.id, {
-          content: [{ type: 'text', text: JSON.stringify(result) }],
+        NextResponse.jsonRpcOk({
+          id: request.id,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+          },
         }),
       );
     }
 
-    return NextResponse.json(
-      fail(request.id, -32601, `알 수 없는 메서드입니다: ${request.method}`),
-      { status: 404 },
-    );
+    return NextResponse.jsonRpcFail({
+      code: JsonRpcErrorCode.MethodNotFound,
+      message: JsonRpcErrorMessage.MethodNotFound,
+      id: request.id,
+    });
   } catch (e) {
-    const message = e instanceof Error ? e.message : '알 수 없는 오류입니다.';
-
-    if (e instanceof UsagePhaseError) {
-      return NextResponse.json(fail(body?.id ?? null, -32602, message), {
-        status: 400,
-      });
-    }
-
-    return NextResponse.json(fail(body?.id ?? null, -32000, message), {
-      status: 500,
+    return NextResponse.jsonRpcFail({
+      id: body?.id ?? null,
+      code: JsonRpcErrorCode.UnknownError,
+      message:
+        e instanceof Error ? e.message : JsonRpcErrorMessage.UnknownError,
     });
   }
 }

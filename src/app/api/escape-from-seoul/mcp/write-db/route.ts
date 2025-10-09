@@ -11,31 +11,18 @@ import {
   postEscapeFromSeoulPlaces,
 } from '@supabase-api/sdk.gen';
 import type { JSONSchema4 } from 'json-schema';
-import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { ENV } from '@/env';
 import {
-  type JsonRpcFailure,
-  type JsonRpcId,
-  type JsonRpcSuccess,
+  JsonRpcErrorCode,
+  JsonRpcErrorMessage,
   zCallToolParams,
   zJsonRpcRequest,
 } from '@/types/mcp';
+import { NextResponse } from '@/utils';
 
-function ok<T>(id: JsonRpcId, result: T): JsonRpcSuccess<T> {
-  return { jsonrpc: '2.0', id, result };
-}
-function fail(
-  id: JsonRpcId,
-  code: number,
-  message: string,
-  data?: unknown,
-): JsonRpcFailure {
-  return { jsonrpc: '2.0', id, error: { code, message, data } };
-}
-
-function configureSupabaseRest(): void {
+const configureSupabaseRest = () => {
   const url = (ENV.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
   const baseUrl = `${url}/rest/v1`;
   const serviceRole = ENV.NEXT_SUPABASE_SERVICE_ROLE;
@@ -107,8 +94,17 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   // entries.*
   {
     name: 'entries.create',
-    description: 'Create a diary entry',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: true },
+    description:
+      '새로운 일기를 생성합니다. 작성한 스토리 텍스트를 DB에 저장할 때 사용하세요. content 필드에 마크다운 형식의 본문을 포함해야 합니다.',
+    inputSchema: {
+      type: 'object',
+      required: ['content'],
+      properties: {
+        content: { type: 'string', description: '일기 본문 (마크다운 형식)' },
+        id: { type: 'string', format: 'uuid', description: '선택적 UUID' },
+      },
+      additionalProperties: true,
+    },
     handler: async (raw: unknown) => {
       const parsed = zEntriesCreate.parse(raw);
       const body = { id: parsed.id ?? crypto.randomUUID(), ...parsed };
@@ -125,11 +121,18 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'entries.update',
-    description: 'Update a diary entry by id',
+    description:
+      '기존 일기를 수정합니다. 특정 ID의 일기 내용을 업데이트할 때 사용하세요. content 외에도 다른 필드를 함께 수정할 수 있습니다.',
     inputSchema: {
       type: 'object',
-      required: ['id'],
-      properties: { id: { type: 'string', format: 'uuid' } },
+      required: ['id', 'content'],
+      properties: {
+        id: { type: 'string', format: 'uuid', description: '수정할 일기의 ID' },
+        content: {
+          type: 'string',
+          description: '수정할 일기 본문 (마크다운 형식)',
+        },
+      },
       additionalProperties: true,
     },
     handler: async (rawArgs: unknown) => {
@@ -147,11 +150,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'entries.delete',
-    description: 'Delete a diary entry by id',
+    description:
+      '일기를 삭제합니다. 잘못 생성되었거나 더 이상 필요하지 않은 일기를 제거할 때 사용하세요.',
     inputSchema: {
       type: 'object',
       required: ['id'],
-      properties: { id: { type: 'string', format: 'uuid' } },
+      properties: {
+        id: { type: 'string', format: 'uuid', description: '삭제할 일기의 ID' },
+      },
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
@@ -169,8 +175,17 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   // characters.*
   {
     name: 'characters.create',
-    description: 'Create character',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: true },
+    description:
+      '새로운 캐릭터를 생성합니다. 스토리에 등장할 인물의 이름, 성격, 배경 등을 저장할 때 사용하세요.',
+    inputSchema: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        name: { type: 'string', description: '캐릭터 이름' },
+        id: { type: 'string', format: 'uuid', description: '선택적 UUID' },
+      },
+      additionalProperties: true,
+    },
     handler: async (raw: unknown) => {
       const parsed = zCharactersCreate.parse(raw);
       const body = { id: parsed.id ?? crypto.randomUUID(), ...parsed };
@@ -187,11 +202,19 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'characters.update',
-    description: 'Update character by id',
+    description:
+      '기존 캐릭터 정보를 수정합니다. 캐릭터의 설정이나 속성을 업데이트할 때 사용하세요.',
     inputSchema: {
       type: 'object',
-      required: ['id'],
-      properties: { id: { type: 'string', format: 'uuid' } },
+      required: ['id', 'name'],
+      properties: {
+        id: {
+          type: 'string',
+          format: 'uuid',
+          description: '수정할 캐릭터의 ID',
+        },
+        name: { type: 'string', description: '캐릭터 이름' },
+      },
       additionalProperties: true,
     },
     handler: async (rawArgs: unknown) => {
@@ -209,11 +232,18 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'characters.delete',
-    description: 'Delete character by id',
+    description:
+      '캐릭터를 삭제합니다. 더 이상 스토리에 등장하지 않거나 불필요한 캐릭터를 제거할 때 사용하세요.',
     inputSchema: {
       type: 'object',
       required: ['id'],
-      properties: { id: { type: 'string', format: 'uuid' } },
+      properties: {
+        id: {
+          type: 'string',
+          format: 'uuid',
+          description: '삭제할 캐릭터의 ID',
+        },
+      },
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
@@ -231,8 +261,17 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   // places.*
   {
     name: 'places.create',
-    description: 'Create place',
-    inputSchema: { type: 'object', properties: {}, additionalProperties: true },
+    description:
+      '새로운 장소를 생성합니다. 스토리의 배경이 될 위치의 이름, 특징, 분위기 등을 저장할 때 사용하세요.',
+    inputSchema: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        name: { type: 'string', description: '장소 이름' },
+        id: { type: 'string', format: 'uuid', description: '선택적 UUID' },
+      },
+      additionalProperties: true,
+    },
     handler: async (raw: unknown) => {
       const parsed = zPlacesCreate.parse(raw);
       const body = { id: parsed.id ?? crypto.randomUUID(), ...parsed };
@@ -249,11 +288,19 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'places.update',
-    description: 'Update place by id',
+    description:
+      '기존 장소 정보를 수정합니다. 장소의 설정이나 속성을 업데이트할 때 사용하세요.',
     inputSchema: {
       type: 'object',
-      required: ['id'],
-      properties: { id: { type: 'string', format: 'uuid' } },
+      required: ['id', 'name'],
+      properties: {
+        id: {
+          type: 'string',
+          format: 'uuid',
+          description: '수정할 장소의 ID',
+        },
+        name: { type: 'string', description: '장소 이름' },
+      },
       additionalProperties: true,
     },
     handler: async (rawArgs: unknown) => {
@@ -271,11 +318,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   },
   {
     name: 'places.delete',
-    description: 'Delete place by id',
+    description:
+      '장소를 삭제합니다. 더 이상 스토리에 사용되지 않거나 불필요한 장소를 제거할 때 사용하세요.',
     inputSchema: {
       type: 'object',
       required: ['id'],
-      properties: { id: { type: 'string', format: 'uuid' } },
+      properties: {
+        id: { type: 'string', format: 'uuid', description: '삭제할 장소의 ID' },
+      },
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
@@ -292,54 +342,72 @@ const tools: Array<ToolDef<unknown, unknown>> = [
 ];
 
 export async function POST(req: Request) {
+  let body: z.infer<typeof zJsonRpcRequest> | null = null;
+
   try {
-    const body = zJsonRpcRequest.parse(await req.json());
-    if (body.jsonrpc !== '2.0' || typeof body.method !== 'string') {
-      return NextResponse.json(fail(null, -32600, 'Invalid Request'), {
-        status: 400,
+    const request = zJsonRpcRequest.parse(await req.json());
+    body = request;
+    if (request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
+      return NextResponse.jsonRpcFail({
+        code: JsonRpcErrorCode.InvalidRequest,
+        message: JsonRpcErrorMessage.InvalidRequest,
+        id: request.id ?? null,
       });
     }
 
-    if (body.method === 'tools/list') {
-      return NextResponse.json(
-        ok(body.id, {
+    if (request.method === 'tools/list') {
+      return NextResponse.jsonRpcOk({
+        id: request.id,
+        result: {
           tools: tools.map((t) => ({
             name: t.name,
             description: t.description,
             inputSchema: t.inputSchema,
           })),
-        }),
-      );
+        },
+      });
     }
 
-    if (body.method === 'tools/call') {
-      const parsed = zCallToolParams.safeParse(body.params ?? {});
+    if (request.method === 'tools/call') {
+      const parsed = zCallToolParams.safeParse(request.params ?? {});
       if (!parsed.success || !parsed.data.name)
-        return NextResponse.json(fail(body.id, -32602, 'Missing tool name'), {
-          status: 400,
+        return NextResponse.jsonRpcFail({
+          code: JsonRpcErrorCode.InvalidParams,
+          message: JsonRpcErrorMessage.InvalidParams,
+          id: request.id,
         });
+
       const tool = tools.find((t) => t.name === parsed.data.name);
       if (!tool)
-        return NextResponse.json(
-          fail(body.id, -32601, `Unknown tool: ${parsed.data.name}`),
-          { status: 404 },
-        );
+        return NextResponse.jsonRpcFail({
+          code: JsonRpcErrorCode.ToolNotFound,
+          message: JsonRpcErrorMessage.ToolNotFound,
+          id: request.id,
+        });
+
       const result = await tool.handler(parsed.data.arguments ?? {});
 
       return NextResponse.json(
-        ok(body.id, {
-          content: [{ type: 'text', text: JSON.stringify(result) }],
+        NextResponse.jsonRpcOk({
+          id: request.id,
+          result: {
+            content: [{ type: 'text', text: JSON.stringify(result) }],
+          },
         }),
       );
     }
 
-    return NextResponse.json(
-      fail(body.id, -32601, `Unknown method: ${body.method}`),
-      { status: 404 },
-    );
+    return NextResponse.jsonRpcFail({
+      code: JsonRpcErrorCode.MethodNotFound,
+      message: JsonRpcErrorMessage.MethodNotFound,
+      id: request.id,
+    });
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Unknown error';
-
-    return NextResponse.json(fail(null, -32000, message), { status: 500 });
+    return NextResponse.jsonRpcFail({
+      id: body?.id ?? null,
+      code: JsonRpcErrorCode.UnknownError,
+      message:
+        e instanceof Error ? e.message : JsonRpcErrorMessage.UnknownError,
+    });
   }
 }
