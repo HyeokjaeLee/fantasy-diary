@@ -1,13 +1,13 @@
+import type {
+  EscapeFromSeoulCharacters,
+  EscapeFromSeoulPlaces,
+} from '@supabase-api/types.gen';
 import OpenAI from 'openai';
 import type {
   ChatCompletionContentPart,
   ChatCompletionMessageParam,
 } from 'openai/resources/chat/completions';
 
-import type {
-  EscapeFromSeoulCharacters,
-  EscapeFromSeoulPlaces,
-} from '@supabase-api/types.gen';
 import { ENV } from '@/env';
 
 import type { ChapterContext, PhaseResult } from '../types/novel';
@@ -77,9 +77,7 @@ export class NovelWritingAgent {
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {
-    return (
-      typeof value === 'object' && value !== null && !Array.isArray(value)
-    );
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
   }
 
   private stringOr(value: unknown, fallback = ''): string {
@@ -131,7 +129,7 @@ export class NovelWritingAgent {
       relationships:
         source.relationships !== undefined
           ? source.relationships
-          : base?.relationships ?? [],
+          : (base?.relationships ?? []),
       major_events: this.stringArrayOr(
         source.major_events,
         base?.major_events ?? [],
@@ -219,19 +217,6 @@ export class NovelWritingAgent {
     }
 
     return { characters: characterLines, places: placeLines };
-  }
-
-  private buildReferenceSections(): string[] {
-    const sections: string[] = [];
-    const summaries = this.summarizeReferences();
-
-    sections.push('## 기존 등장인물');
-    sections.push(...summaries.characters);
-    sections.push('');
-    sections.push('## 기존 장소');
-    sections.push(...summaries.places);
-
-    return sections;
   }
 
   private upsertCharacter(data: Record<string, unknown>) {
@@ -421,9 +406,7 @@ export class NovelWritingAgent {
         const characters = Array.isArray(parsedCharacters)
           ? parsedCharacters
               .map((item) =>
-                this.isRecord(item)
-                  ? this.mergeCharacterReference(item)
-                  : null,
+                this.isRecord(item) ? this.mergeCharacterReference(item) : null,
               )
               .filter(
                 (item): item is EscapeFromSeoulCharacters => item !== null,
@@ -436,9 +419,7 @@ export class NovelWritingAgent {
         const places = Array.isArray(parsedPlaces)
           ? parsedPlaces
               .map((item) =>
-                this.isRecord(item)
-                  ? this.mergePlaceReference(item)
-                  : null,
+                this.isRecord(item) ? this.mergePlaceReference(item) : null,
               )
               .filter((item): item is EscapeFromSeoulPlaces => item !== null)
           : [];
@@ -454,7 +435,7 @@ export class NovelWritingAgent {
   async reconcileEntities(): Promise<void> {
     await this.loadReferenceData(true);
     const systemPrompt =
-      '당신은 "서울 좀비 일지" 프로젝트의 데이터 정합성을 책임지는 기록 보조원입니다. 주 임무는 스토리에서 등장한 캐릭터와 장소가 Supabase DB에 모두 반영되도록 MCP 도구를 호출하는 것입니다.';
+      '당신은 "Escape from Seoul" 프로젝트의 데이터 정합성을 책임지는 기록 보조원입니다. 주 임무는 스토리에서 등장한 캐릭터와 장소가 Supabase DB에 모두 반영되도록 MCP 도구를 호출하는 것입니다.';
     const summaries = this.summarizeReferences();
 
     const prompt = [
@@ -473,7 +454,7 @@ export class NovelWritingAgent {
       '- 본문에서 새롭게 등장한 캐릭터나 장소가 기존 목록에 없으면 `characters.create` 또는 `places.create`를 호출해 기본 정보를 저장하세요.',
       '- 기존 인물/장소의 속성이 본문 내용으로 갱신되어야 한다면 `characters.update` 또는 `places.update`로 최신 정보를 반영하세요.',
       '- 모든 도구 호출 후에는 응답을 확인하고 오류가 있으면 수정해 다시 시도하세요.',
-      '- 추가 조치가 필요 없다면 도구를 호출하지 말고 \"OK\"라고만 답하세요.',
+      '- 추가 조치가 필요 없다면 도구를 호출하지 말고 "OK"라고만 답하세요.',
     ].join('\n');
 
     const messages: ChatCompletionMessageParam[] = [
@@ -656,6 +637,9 @@ export class NovelWritingAgent {
       parts.push('');
     } else {
       parts.push('## 첫 번째 챕터입니다');
+      parts.push(
+        '평화로운 일상이 좀비 바이러스로 인해 갑작스럽게 변화하는 과정을 묘사해야합니다.',
+      );
       parts.push('');
     }
 
@@ -666,9 +650,6 @@ export class NovelWritingAgent {
     parts.push('2. 주요 캐릭터의 현재 위치 파악');
     parts.push(
       '3. 해당 위치의 실시간 날씨 조회 (geo.gridPlaceWeather) 후 체감 묘사로 활용할 요소 정리',
-    );
-    parts.push(
-      '   - baseDate/baseTime은 HHmm 형식이며 10분 단위 값만 허용됩니다(예: 0130). 제공하지 않으면 자동 계산되며, 재시도 시에는 동일한 값으로 호출하세요.',
     );
     parts.push('4. 시간 경과와 이동 가능 거리 계산');
     parts.push('5. 다음 챕터의 주요 사건과 전개 방향 결정');

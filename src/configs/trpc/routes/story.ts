@@ -1,12 +1,11 @@
+import { client } from '@supabase-api/client.gen';
+import { getEscapeFromSeoulEntries } from '@supabase-api/sdk.gen';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { client } from '@supabase-api/client.gen';
-import { getEscapeFromSeoulEntries } from '@supabase-api/sdk.gen';
-import { ENV } from '@/env';
-
-import { publicProcedure, router } from '@/configs/trpc/settings';
 import type { WriteChapterResponse } from '@/app/api/escape-from-seoul/types/novel';
+import { publicProcedure, router } from '@/configs/trpc/settings';
+import { ENV } from '@/env';
 
 const configureSupabaseRest = () => {
   const url = (ENV.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');

@@ -320,7 +320,9 @@ async function saveChapterToDb(
       (value): value is string => typeof value === 'string' && value.length > 0,
     ) ?? '';
   const temperatureCandidate = weatherRecord
-    ? weatherRecord.temperature ?? weatherRecord.temp ?? weatherRecord.feelsLike
+    ? (weatherRecord.temperature ??
+      weatherRecord.temp ??
+      weatherRecord.feelsLike)
     : undefined;
   const parsedTemperature =
     typeof temperatureCandidate === 'number'
@@ -332,9 +334,7 @@ async function saveChapterToDb(
     ? parsedTemperature
     : 0;
   const primaryLocationCandidate =
-    context.draft.places[0]?.name ??
-    context.references.places[0]?.name ??
-    '';
+    context.draft.places[0]?.name ?? context.references.places[0]?.name ?? '';
   const primaryLocation =
     typeof primaryLocationCandidate === 'string'
       ? primaryLocationCandidate

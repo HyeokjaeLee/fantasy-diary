@@ -159,7 +159,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   {
     name: 'geo.gridPlaceWeather',
     description:
-      '특정 격자 위치의 기상청 초단기실황 날씨 데이터를 조회하고, 해당 위치의 좌표·경계상자·주변 격자 정보를 함께 제공합니다. 서울 지역의 실시간 날씨(기온, 강수, 습도 등)와 위치 맥락이 필요할 때 사용하세요. 장면에 날씨 묘사를 추가하거나 특정 지역의 기상 상황을 확인할 때 유용합니다.',
+      '특정 격자 위치의 기상청 초단기실황(getUltraSrtNcst) 데이터를 조회합니다. `baseDate`(YYYYMMDD)와 `baseTime`(HHmm)은 10분 단위 값(00,10,20,30,40,50)만 허용되며, 둘 중 하나라도 누락되면 자동으로 가장 최근 시각으로 재조회합니다. 잘못된 값으로 호출해 실패했다면 동일 격자에 대해 올바른 HHmm로 다시 호출하세요.',
     inputSchema: {
       type: 'object',
       required: ['nx', 'ny'],
@@ -236,14 +236,33 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         return `${deg}°${min}'${sec}" ${hemi}`;
       };
 
-      const weather = await fetchKmaUltraSrtNcst({
-        gridX: nx,
-        gridY: ny,
-        baseDate: args.baseDate,
-        baseTime: args.baseTime,
-        pageNumber: args.pageNumber,
-        numberOfRows: args.numberOfRows,
-      });
+      let weather;
+      try {
+        weather = await fetchKmaUltraSrtNcst({
+          gridX: nx,
+          gridY: ny,
+          baseDate: args.baseDate,
+          baseTime: args.baseTime,
+          pageNumber: args.pageNumber,
+          numberOfRows: args.numberOfRows,
+        });
+      } catch (error) {
+        if (args.baseDate || args.baseTime) {
+          console.warn(
+            `geo.gridPlaceWeather fallback to auto base time: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          weather = await fetchKmaUltraSrtNcst({
+            gridX: nx,
+            gridY: ny,
+            pageNumber: args.pageNumber,
+            numberOfRows: args.numberOfRows,
+          });
+        } else {
+          throw error;
+        }
+      }
 
       const hints = [
         `WGS84 좌표(lat, lon): ${lat.toFixed(6)}, ${lon.toFixed(6)} (DMS: ${dms(lat, 'lat')}, ${dms(lon, 'lon')})`,
