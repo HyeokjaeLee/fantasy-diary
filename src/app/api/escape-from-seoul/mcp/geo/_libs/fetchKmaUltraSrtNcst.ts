@@ -1,12 +1,7 @@
+import ky, { HTTPError } from 'ky';
 import { z } from 'zod';
 
 import { ENV } from '@/env';
-
-// Zod schemas for response validation
-const zKmaHeader = z.object({
-  resultCode: z.string(),
-  resultMsg: z.string(),
-});
 
 const zKmaUltraItem = z.object({
   baseDate: z.string(), // YYYYMMDD
@@ -17,36 +12,25 @@ const zKmaUltraItem = z.object({
   obsrValue: z.string(),
 });
 
-const zKmaUltraBody = z.object({
-  dataType: z.string().optional(),
-  items: z
-    .object({
-      item: z.array(zKmaUltraItem),
-    })
-    .optional(),
-  pageNo: z.coerce.number().optional(),
-  numOfRows: z.coerce.number().optional(),
-  totalCount: z.coerce.number().optional(),
-});
-
 const zKmaUltraResponse = z.object({
-  response: z.object({ header: zKmaHeader, body: zKmaUltraBody }),
+  response: z.object({
+    header: z.object({
+      resultCode: z.string(),
+      resultMsg: z.string(),
+    }),
+    body: z.object({
+      dataType: z.string().optional(),
+      items: z
+        .object({
+          item: z.array(zKmaUltraItem),
+        })
+        .optional(),
+      pageNo: z.coerce.number().optional(),
+      numOfRows: z.coerce.number().optional(),
+      totalCount: z.coerce.number().optional(),
+    }),
+  }),
 });
-
-export type KmaUltraSrtNcstItem = z.infer<typeof zKmaUltraItem>;
-
-// Result schema (camelCase) for perfect type inference and runtime validation
-export const zKmaUltraSrtNcstResult = z.object({
-  url: z.url(),
-  baseDate: z.string(),
-  baseTime: z.string(),
-  nx: z.number(),
-  ny: z.number(),
-  items: z.array(zKmaUltraItem),
-  header: z.object({ resultCode: z.string(), resultMsg: z.string() }),
-  raw: zKmaUltraResponse,
-});
-export type KmaUltraSrtNcstResult = z.infer<typeof zKmaUltraSrtNcstResult>;
 
 /**
  * 초단기실황(getUltraSrtNcst) 조회
@@ -60,14 +44,14 @@ export type KmaUltraSrtNcstResult = z.infer<typeof zKmaUltraSrtNcstResult>;
  * @param options.pageNumber 페이지 번호 (기본 1)
  * @param options.numberOfRows 한 페이지 결과 수 (기본 1000)
  */
-export async function fetchKmaUltraSrtNcst(options: {
+export const fetchCurrentWeatherFromKma = async (options: {
   gridX: number;
   gridY: number;
   baseDate?: string; // YYYYMMDD
   baseTime?: string; // HHmm
   pageNumber?: number;
   numberOfRows?: number;
-}): Promise<KmaUltraSrtNcstResult> {
+}) => {
   const { gridX, gridY } = options;
   if (!Number.isInteger(gridX) || !Number.isInteger(gridY)) {
     throw new Error('gridX, gridY는 정수여야 함');
@@ -94,32 +78,40 @@ export async function fetchKmaUltraSrtNcst(options: {
     baseTime = `${hh}00`;
   }
 
-  const urlObj = new URL(
-    'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst',
-  );
-  urlObj.searchParams.set('serviceKey', ENV.NEXT_WEATHER_API_KEY);
-  urlObj.searchParams.set('pageNo', String(options.pageNumber ?? 1));
-  urlObj.searchParams.set('numOfRows', String(options.numberOfRows ?? 1000));
-  urlObj.searchParams.set('dataType', 'JSON');
-  urlObj.searchParams.set('base_date', baseDate);
-  urlObj.searchParams.set('base_time', baseTime);
-  urlObj.searchParams.set('nx', String(gridX));
-  urlObj.searchParams.set('ny', String(gridY));
-  const url = urlObj.toString();
+  let res: Response;
+  try {
+    res = await ky.get(
+      'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst',
+      {
+        headers: { Accept: 'application/json' },
+        searchParams: {
+          serviceKey: ENV.NEXT_WEATHER_API_KEY,
+          pageNo: options.pageNumber ?? 1,
+          numOfRows: options.numberOfRows ?? 1_000,
+          dataType: 'JSON',
+          base_date: baseDate,
+          base_time: baseTime,
+          nx: gridX,
+          ny: gridY,
+        },
+      },
+    );
+  } catch (error) {
+    if (error instanceof HTTPError)
+      throw new Error(`KMA 요청 실패: HTTP ${error.response.status}`);
 
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { Accept: 'application/json' },
-  });
-  if (!res.ok) {
-    throw new Error(`KMA 요청 실패: HTTP ${res.status}`);
+    if (error instanceof Error) throw error;
+
+    throw new Error(`KMA 요청 실패: ${String(error)}`);
   }
 
   const contentType = res.headers.get('content-type') || '';
+
   if (!contentType.toLowerCase().includes('json')) {
     const text = await res.text();
     // KMA가 오류 시 XML(OpenAPI_...)이나 HTML을 반환하는 경우가 있어 JSON 파싱 전에 방어
     const preview = text.slice(0, 300);
+
     throw new Error(
       `KMA 응답이 JSON이 아님 (content-type: ${contentType}): ${preview}`,
     );
@@ -132,14 +124,12 @@ export async function fetchKmaUltraSrtNcst(options: {
   const items = body.items?.item ?? [];
 
   // Success code usually '00'
-  if (!(header.resultCode === '00' || header.resultCode === '0')) {
+  if (!(header.resultCode === '00' || header.resultCode === '0'))
     throw new Error(
       `KMA 오류: ${header.resultMsg} (code=${header.resultCode})`,
     );
-  }
 
   const output = {
-    url,
     baseDate,
     baseTime,
     nx: gridX,
@@ -149,6 +139,15 @@ export async function fetchKmaUltraSrtNcst(options: {
     raw: parsed,
   };
 
-  // Runtime validation and perfect TS inference
-  return zKmaUltraSrtNcstResult.parse(output);
-}
+  return z
+    .object({
+      baseDate: z.string(),
+      baseTime: z.string(),
+      nx: z.number(),
+      ny: z.number(),
+      items: z.array(zKmaUltraItem),
+      header: z.object({ resultCode: z.string(), resultMsg: z.string() }),
+      raw: zKmaUltraResponse,
+    })
+    .parse(output);
+};

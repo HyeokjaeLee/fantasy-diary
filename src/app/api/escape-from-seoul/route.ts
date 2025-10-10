@@ -49,7 +49,7 @@ export async function POST(
     // 2. Generate chapter ID (YYYYMMDDHHmm)
     const chapterId = formatChapterId(currentTime);
 
-    console.log(`[${chapterId}] Starting chapter generation...`);
+    console.info(`[${chapterId}] Starting chapter generation...`);
 
     // 3. Fetch previous chapter
     const previousChapter = await getPreviousChapter();
@@ -70,37 +70,37 @@ export async function POST(
     };
 
     // 5. Convert MCP Tools to OpenAI Functions
-    console.log(`[${chapterId}] Loading MCP tools...`);
+    console.info(`[${chapterId}] Loading MCP tools...`);
     const tools = await getMcpToolsAsOpenAIFunctions();
-    console.log(`[${chapterId}] Loaded ${tools.length} tools`);
+    console.info(`[${chapterId}] Loaded ${tools.length} tools`);
 
     // 6. Create Novel Agent
     const agent = new NovelWritingAgent(context, tools);
 
     // 7. Phase 1: Prewriting
-    console.log(`[${chapterId}] Phase 1: Prewriting...`);
+    console.info(`[${chapterId}] Phase 1: Prewriting...`);
     await agent.executePrewriting();
 
     // 8. Phase 2: Drafting
-    console.log(`[${chapterId}] Phase 2: Drafting...`);
+    console.info(`[${chapterId}] Phase 2: Drafting...`);
     await agent.executeDrafting();
 
     // 9. Phase 3: Revision
-    console.log(`[${chapterId}] Phase 3: Revision...`);
+    console.info(`[${chapterId}] Phase 3: Revision...`);
     const revisionResult = await agent.executeRevision();
     const finalContent = revisionResult.output;
 
-    console.log(`[${chapterId}] Reconciling entities...`);
+    console.info(`[${chapterId}] Reconciling entities...`);
     await agent.reconcileEntities();
 
     // 10. Save to database
-    console.log(`[${chapterId}] Saving to database...`);
+    console.info(`[${chapterId}] Saving to database...`);
     await saveChapterToDb(chapterId, finalContent, context);
 
     // 11. Calculate execution time
     const executionTime = Date.now() - startTime;
 
-    console.log(
+    console.info(
       `[${chapterId}] Completed in ${(executionTime / 1000).toFixed(1)}s`,
     );
 
@@ -209,7 +209,7 @@ async function saveChapterToDb(
   const writeDbUrl = `${baseUrl}/api/escape-from-seoul/mcp/write-db`;
   const readDbUrl = `${baseUrl}/api/escape-from-seoul/mcp/read-db`;
   const debug = (message: string) =>
-    console.log(`[${context.chapterId}] ${message}`);
+    console.info(`[${context.chapterId}] ${message}`);
   const preview = (value: unknown, maxLength = 160) => {
     if (value === undefined || value === null) return '(empty)';
     let text: string;

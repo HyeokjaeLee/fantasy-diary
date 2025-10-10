@@ -134,7 +134,9 @@ const zPlacesUpdate = z
 
 const toStringArray = (value: unknown, fallback: string[] = []): string[] => {
   if (Array.isArray(value)) {
-    return value.map((item) => (typeof item === 'string' ? item : String(item)));
+    return value.map((item) =>
+      typeof item === 'string' ? item : String(item),
+    );
   }
 
   return fallback;
@@ -143,9 +145,7 @@ const toStringArray = (value: unknown, fallback: string[] = []): string[] => {
 const stripUndefined = <T extends Record<string, unknown>>(
   value: T,
 ): Partial<T> => {
-  const entries = Object.entries(value).filter(
-    ([, val]) => val !== undefined,
-  );
+  const entries = Object.entries(value).filter(([, val]) => val !== undefined);
 
   return Object.fromEntries(entries) as Partial<T>;
 };
@@ -352,7 +352,10 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       const { error } = await patchEscapeFromSeoulCharacters({
         headers: { Prefer: 'return=minimal' },
         query: { id: `eq.${id}` },
-        body: { id, ...bodyWithTimestamps } as unknown as EscapeFromSeoulCharacters,
+        body: {
+          id,
+          ...bodyWithTimestamps,
+        } as unknown as EscapeFromSeoulCharacters,
       });
       if (error) throw new Error(String(error));
 

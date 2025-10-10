@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { fetchKmaUltraSrtNcst } from '@/app/api/external/kma';
+import { fetchCurrentWeatherFromKma } from '@/app/api/escape-from-seoul/mcp/geo/_libs/fetchKmaUltraSrtNcst';
 import { handleMcpRequest, type ToolDef } from '@/utils';
 
 export const runtime = 'edge';
@@ -238,7 +238,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
 
       let weather;
       try {
-        weather = await fetchKmaUltraSrtNcst({
+        weather = await fetchCurrentWeatherFromKma({
           gridX: nx,
           gridY: ny,
           baseDate: args.baseDate,
@@ -253,7 +253,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
               error instanceof Error ? error.message : String(error)
             }`,
           );
-          weather = await fetchKmaUltraSrtNcst({
+          weather = await fetchCurrentWeatherFromKma({
             gridX: nx,
             gridY: ny,
             pageNumber: args.pageNumber,

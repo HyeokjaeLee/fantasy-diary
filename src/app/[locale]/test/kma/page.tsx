@@ -1,6 +1,6 @@
 import React from 'react';
 
-import { fetchKmaUltraSrtNcst } from '@/app/api/external/kma';
+import { fetchCurrentWeatherFromKma } from '@/app/api/escape-from-seoul/mcp/geo/_libs/fetchKmaUltraSrtNcst';
 
 type Sp = Record<string, string | string[] | undefined>;
 
@@ -31,12 +31,13 @@ export default async function Page({
 
   const shouldFetch = typeof sp.submit !== 'undefined';
 
-  let result: Awaited<ReturnType<typeof fetchKmaUltraSrtNcst>> | null = null;
+  let result: Awaited<ReturnType<typeof fetchCurrentWeatherFromKma>> | null =
+    null;
   let error: string | null = null;
 
   if (shouldFetch) {
     try {
-      result = await fetchKmaUltraSrtNcst({
+      result = await fetchCurrentWeatherFromKma({
         gridX,
         gridY,
         baseDate: baseDate || undefined,
