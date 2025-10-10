@@ -5,6 +5,7 @@ import {
   deleteEscapeFromSeoulCharacters,
   deleteEscapeFromSeoulEntries,
   deleteEscapeFromSeoulPlaces,
+  getEscapeFromSeoulCharacters,
   patchEscapeFromSeoulCharacters,
   patchEscapeFromSeoulEntries,
   patchEscapeFromSeoulPlaces,
@@ -337,27 +338,61 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     handler: async (rawArgs: unknown) => {
       const payload = zCharactersUpdate.parse(rawArgs);
       const { id, ...rest } = payload;
-      const base = stripUndefined(rest);
-      if (Object.keys(base).length === 0) {
+      const {
+        major_events,
+        character_traits,
+        name,
+        ...others
+      } = rest;
+      const normalized = stripUndefined({
+        ...others,
+        name: typeof name === 'string' ? name.trim() : undefined,
+        major_events:
+          major_events !== undefined
+            ? toStringArray(major_events)
+            : undefined,
+        character_traits:
+          character_traits !== undefined
+            ? toStringArray(character_traits)
+            : undefined,
+      }) as Partial<EscapeFromSeoulCharacters>;
+      if (Object.keys(normalized).length === 0) {
         return { ok: true };
       }
-      const bodyWithTimestamps =
-        base.last_updated !== undefined
-          ? base
-          : {
-              ...base,
-              last_updated: new Date().toISOString(),
-            };
+
       configureSupabaseRest();
+      const { data, error: fetchError } = await getEscapeFromSeoulCharacters({
+        query: { id: `eq.${id}`, select: '*' },
+        headers: { Range: '0-0' },
+      });
+      if (fetchError) {
+        throw new Error(JSON.stringify(fetchError));
+      }
+      const current = data?.[0];
+      if (!current) {
+        throw new Error(`Character ${id} not found`);
+      }
+
+      const { last_updated, ...restNormalized } = normalized;
+      const lastUpdated = last_updated ?? new Date().toISOString();
+      const merged: EscapeFromSeoulCharacters = {
+        ...current,
+        ...restNormalized,
+        id: current.id,
+        name: restNormalized.name ?? current.name,
+        major_events:
+          restNormalized.major_events ?? current.major_events ?? [],
+        character_traits:
+          restNormalized.character_traits ?? current.character_traits ?? [],
+        last_updated: lastUpdated,
+      };
+
       const { error } = await patchEscapeFromSeoulCharacters({
         headers: { Prefer: 'return=minimal' },
         query: { id: `eq.${id}` },
-        body: {
-          id,
-          ...bodyWithTimestamps,
-        } as unknown as EscapeFromSeoulCharacters,
+        body: merged,
       });
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(JSON.stringify(error));
 
       return { ok: true };
     },
