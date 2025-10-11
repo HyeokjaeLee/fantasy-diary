@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server';
 
 import { ENV } from '@/env';
 
-import { getMcpToolsAsOpenAIFunctions } from './lib/mcp-client';
+import { getMcpFunctionDeclarations } from './lib/mcp-client';
 import { NovelWritingAgent } from './lib/novel-agent';
 import type {
   ChapterContext,
@@ -69,9 +69,9 @@ export async function POST(
       },
     };
 
-    // 5. Convert MCP Tools to OpenAI Functions
+    // 5. Convert MCP Tools to Gemini Function Declarations
     console.info(`[${chapterId}] Loading MCP tools...`);
-    const tools = await getMcpToolsAsOpenAIFunctions();
+    const tools = await getMcpFunctionDeclarations();
     console.info(`[${chapterId}] Loaded ${tools.length} tools`);
 
     // 6. Create Novel Agent

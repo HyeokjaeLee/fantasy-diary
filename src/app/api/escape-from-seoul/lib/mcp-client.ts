@@ -1,5 +1,4 @@
-import type { ChatCompletionTool } from 'openai/resources/chat/completions';
-import type { FunctionParameters } from 'openai/resources/shared';
+import type { FunctionDeclaration } from '@google/genai';
 
 import { ENV } from '@/env';
 
@@ -30,9 +29,15 @@ async function callInternalMcp(
   return response.json();
 }
 
-// MCP tools를 OpenAI function schema로 변환
-export async function getMcpToolsAsOpenAIFunctions(): Promise<
-  ChatCompletionTool[]
+type McpTool = {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+};
+
+// MCP tools를 Gemini function schema로 변환
+export async function getMcpFunctionDeclarations(): Promise<
+  FunctionDeclaration[]
 > {
   // 3개 MCP 서버의 tools/list 병렬 호출
   const [geoTools, readTools, writeTools] = await Promise.all([
@@ -43,29 +48,26 @@ export async function getMcpToolsAsOpenAIFunctions(): Promise<
 
   // 모든 도구 합치기
   const allTools = [
-    ...(geoTools.result?.tools || []),
-    ...(readTools.result?.tools || []),
-    ...(writeTools.result?.tools || []),
+    ...((geoTools.result?.tools as McpTool[]) || []),
+    ...((readTools.result?.tools as McpTool[]) || []),
+    ...((writeTools.result?.tools as McpTool[]) || []),
   ];
 
-  // OpenAI function schema로 변환
-  return allTools.map(
-    (tool: {
-      name: string;
-      description?: string;
-      inputSchema: FunctionParameters;
-    }) => ({
-      type: 'function' as const,
-      function: {
-        name: tool.name.replace(/\./g, '_'), // Convert dots to underscores for OpenAI compatibility
-        description: tool.description || '',
-        parameters: tool.inputSchema,
-      },
-    }),
-  );
+  // Gemini function schema로 변환
+  return allTools.map((tool) => {
+    const declaration: FunctionDeclaration = {
+      name: tool.name.replace(/\./g, '_'),
+      description: tool.description ?? '',
+    };
+    if (tool.inputSchema) {
+      declaration.parametersJsonSchema = tool.inputSchema;
+    }
+
+    return declaration;
+  });
 }
 
-// OpenAI function call을 MCP tools/call로 실행
+// Gemini function call을 MCP tools/call로 실행
 export async function executeMcpTool(
   toolName: string,
   args: unknown,

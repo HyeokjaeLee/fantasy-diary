@@ -1,12 +1,16 @@
+import {
+  type Content,
+  createPartFromFunctionResponse,
+  type FunctionCall,
+  FunctionCallingConfigMode,
+  type FunctionDeclaration,
+  GoogleGenAI,
+  type Part,
+} from '@google/genai';
 import type {
   EscapeFromSeoulCharacters,
   EscapeFromSeoulPlaces,
 } from '@supabase-api/types.gen';
-import OpenAI from 'openai';
-import type {
-  ChatCompletionContentPart,
-  ChatCompletionMessageParam,
-} from 'openai/resources/chat/completions';
 
 import { ENV } from '@/env';
 
@@ -14,17 +18,27 @@ import type { ChapterContext, PhaseResult } from '../types/novel';
 import { executeMcpTool } from './mcp-client';
 import { NOVEL_CONFIG, SYSTEM_PROMPT } from './novel-config';
 
-export class NovelWritingAgent {
-  private openai: OpenAI;
-  private context: ChapterContext;
-  private tools: OpenAI.ChatCompletionTool[];
+const GEMINI_MODEL = 'gemini-2.5-pro';
 
-  constructor(context: ChapterContext, tools: OpenAI.ChatCompletionTool[]) {
-    this.openai = new OpenAI({
-      apiKey: ENV.NEXT_OPENAI_API_KEY,
+type AgentMessage = {
+  role: 'system' | 'user';
+  content: string;
+};
+
+export class NovelWritingAgent {
+  private client: GoogleGenAI;
+  private context: ChapterContext;
+  private functionDeclarations: FunctionDeclaration[];
+
+  constructor(
+    context: ChapterContext,
+    functionDeclarations: FunctionDeclaration[],
+  ) {
+    this.client = new GoogleGenAI({
+      apiKey: ENV.NEXT_GEMINI_API_KEY,
     });
     this.context = context;
-    this.tools = tools;
+    this.functionDeclarations = functionDeclarations;
   }
 
   private debug(message: string) {
@@ -32,22 +46,22 @@ export class NovelWritingAgent {
   }
 
   private preview(
-    content: string | ChatCompletionContentPart[] | undefined,
+    content: string | Part[] | undefined,
     maxLength = 160,
   ): string {
     if (!content) return '(empty)';
     const text = Array.isArray(content)
       ? content
           .map((part) => {
-            if (typeof part === 'string') {
-              return part;
+            if (!part) return '';
+            if (typeof part.text === 'string') {
+              return part.text;
             }
-
-            if (typeof part === 'object' && part !== null && 'text' in part) {
-              const textValue = (part as { text?: unknown }).text;
-              if (typeof textValue === 'string') {
-                return textValue;
-              }
+            if (part.functionCall) {
+              return `function:${part.functionCall.name ?? 'unknown'}`;
+            }
+            if (part.functionResponse) {
+              return `response:${part.functionResponse.name ?? 'unknown'}`;
             }
 
             return JSON.stringify(part);
@@ -58,6 +72,30 @@ export class NovelWritingAgent {
     if (normalized.length <= maxLength) return normalized;
 
     return `${normalized.slice(0, maxLength)}...`;
+  }
+
+  private partsToPlainText(parts: Part[] | undefined): string {
+    if (!parts) return '';
+
+    return parts
+      .map((part) => (typeof part.text === 'string' ? part.text : ''))
+      .join('')
+      .trim();
+  }
+
+  private normalizeToolResponse(result: string): Record<string, unknown> {
+    const parsed = this.tryParseJson(result);
+    if (this.isRecord(parsed)) {
+      return parsed;
+    }
+    if (Array.isArray(parsed)) {
+      return { result: parsed };
+    }
+    if (typeof parsed === 'string') {
+      return { result: parsed };
+    }
+
+    return { result };
   }
 
   private toRecord(value: unknown): Record<string, unknown> | null {
@@ -457,7 +495,7 @@ export class NovelWritingAgent {
       '- 추가 조치가 필요 없다면 도구를 호출하지 말고 "OK"라고만 답하세요.',
     ].join('\n');
 
-    const messages: ChatCompletionMessageParam[] = [
+    const messages: AgentMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt },
     ];
@@ -471,7 +509,7 @@ export class NovelWritingAgent {
     await this.loadReferenceData(true);
     const prompt = this.buildPrewritingPrompt();
     this.debug(`Prewriting prompt ready: ${this.preview(prompt)}`);
-    const messages: ChatCompletionMessageParam[] = [
+    const messages: AgentMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: prompt },
     ];
@@ -494,7 +532,7 @@ export class NovelWritingAgent {
     await this.loadReferenceData(true);
     const prompt = this.buildDraftingPrompt();
     this.debug(`Drafting prompt ready: ${this.preview(prompt)}`);
-    const messages: ChatCompletionMessageParam[] = [
+    const messages: AgentMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: prompt },
     ];
@@ -517,7 +555,7 @@ export class NovelWritingAgent {
     await this.loadReferenceData(true);
     const prompt = this.buildRevisionPrompt();
     this.debug(`Revision prompt ready: ${this.preview(prompt)}`);
-    const messages: ChatCompletionMessageParam[] = [
+    const messages: AgentMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: prompt },
     ];
@@ -533,84 +571,117 @@ export class NovelWritingAgent {
     };
   }
 
-  // OpenAI API 호출 with Function Calling
-  private async chatWithTools(
-    messages: ChatCompletionMessageParam[],
-  ): Promise<string> {
-    const currentMessages = [...messages];
-    const maxIterations = 20; // 무한 루프 방지
+  // Gemini API 호출 with Function Calling
+  private async chatWithTools(messages: AgentMessage[]): Promise<string> {
+    const maxIterations = 20;
+    const initialConversation: Content[] = messages
+      .filter((message) => message.role !== 'system')
+      .map((message) => ({
+        role: message.role === 'system' ? 'user' : message.role,
+        parts: [{ text: message.content }],
+      }));
+    const systemInstruction = messages
+      .filter((message) => message.role === 'system')
+      .map((message) => message.content)
+      .join('\n\n')
+      .trim();
+
+    if (initialConversation.length === 0) {
+      throw new Error('chatWithTools requires at least one user message');
+    }
+
+    const conversation: Content[] = [...initialConversation];
     let iterations = 0;
 
     while (iterations < maxIterations) {
       iterations++;
-      const lastMessage = currentMessages[currentMessages.length - 1];
-      if (lastMessage?.role === 'user') {
+      const lastContent = conversation[conversation.length - 1];
+      if (lastContent?.role === 'user') {
         this.debug(
-          `Iteration ${iterations} user message: ${this.preview(lastMessage.content ?? '')}`,
+          `Iteration ${iterations} user message: ${this.preview(lastContent.parts)}`,
         );
       }
 
-      const response = await this.openai.chat.completions.create({
-        model: 'gpt-5',
-        messages: currentMessages,
-        tools: this.tools,
+      const response = await this.client.models.generateContent({
+        model: GEMINI_MODEL,
+        contents: conversation,
+        config: {
+          systemInstruction:
+            systemInstruction.length > 0 ? systemInstruction : undefined,
+          tools:
+            this.functionDeclarations.length > 0
+              ? [{ functionDeclarations: this.functionDeclarations }]
+              : undefined,
+          toolConfig:
+            this.functionDeclarations.length > 0
+              ? {
+                  functionCallingConfig: {
+                    mode: FunctionCallingConfigMode.AUTO,
+                  },
+                }
+              : undefined,
+        },
       });
 
-      const message = response.choices[0].message;
-      currentMessages.push(message);
-      this.debug(
-        `Iteration ${iterations} model role=${message.role} toolCalls=${message.tool_calls?.length ?? 0}`,
-      );
+      const functionCalls: FunctionCall[] = response.functionCalls ?? [];
+      const candidateContent = response.candidates?.[0]?.content;
 
-      // Function call이 없으면 최종 응답
-      if (!message.tool_calls || message.tool_calls.length === 0) {
+      if (candidateContent) {
+        conversation.push(candidateContent);
         this.debug(
-          `Iteration ${iterations} final response: ${this.preview(message.content ?? '')}`,
+          `Iteration ${iterations} model response: ${this.preview(candidateContent.parts)}`,
         );
-
-        return message.content || '';
       }
 
-      // Function calling 실행
-      for (const toolCall of message.tool_calls) {
-        let currentToolName = 'unknown';
+      if (functionCalls.length === 0) {
+        const finalText =
+          response.text ?? this.partsToPlainText(candidateContent?.parts);
+        this.debug(
+          `Iteration ${iterations} final response: ${this.preview(finalText)}`,
+        );
+
+        return finalText;
+      }
+
+      for (const call of functionCalls) {
+        const currentToolName = call.name ?? 'unknown';
+        const args = call.args ?? {};
+
         try {
-          // Type guard for function tool calls
-          if (toolCall.type !== 'function' || !('function' in toolCall)) {
-            continue;
-          }
-
-          const fnCall = toolCall.function;
-          if (!fnCall) {
-            continue;
-          }
-
-          currentToolName = fnCall.name;
-          const args = JSON.parse(fnCall.arguments);
+          const serializedArgs = JSON.stringify(args);
           this.debug(
-            `Calling tool ${currentToolName} with args ${this.preview(fnCall.arguments)}`,
+            `Calling tool ${currentToolName} with args ${this.preview(serializedArgs)}`,
           );
+        } catch {
+          this.debug(
+            `Calling tool ${currentToolName} with args (serialization failed)`,
+          );
+        }
+
+        let responsePayload: Record<string, unknown>;
+        try {
           const result = await executeMcpTool(currentToolName, args);
           this.debug(`Tool ${currentToolName} result: ${this.preview(result)}`);
           this.recordToolSideEffects(currentToolName, args, result);
-
-          currentMessages.push({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: result,
-          });
+          responsePayload = this.normalizeToolResponse(result);
         } catch (error) {
           const messageText =
             error instanceof Error ? error.message : 'Unknown error';
           this.debug(
             `Tool ${currentToolName} error: ${this.preview(messageText)}`,
           );
-          currentMessages.push({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: `Error: ${messageText}`,
-          });
+          responsePayload = { error: messageText };
         }
+
+        const functionResponsePart = createPartFromFunctionResponse(
+          call.id ?? currentToolName,
+          currentToolName,
+          responsePayload,
+        );
+        conversation.push({
+          role: 'user',
+          parts: [functionResponsePart],
+        });
       }
     }
 

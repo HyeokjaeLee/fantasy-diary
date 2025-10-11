@@ -14,6 +14,7 @@ export default function NovelTestPage() {
 
     if (!datetime) {
       alert('날짜를 입력해주세요');
+
       return;
     }
 
@@ -52,7 +53,10 @@ export default function NovelTestPage() {
       <div className="mx-auto max-w-4xl">
         <h1 className="mb-8 text-3xl font-bold">Novel Generation Test</h1>
 
-        <form onSubmit={handleSubmit} className="mb-8 rounded-lg bg-white p-6 shadow">
+        <form
+          onSubmit={handleSubmit}
+          className="mb-8 rounded-lg bg-white p-6 shadow"
+        >
           <div className="mb-4">
             <label htmlFor="datetime" className="mb-2 block font-medium">
               Date & Time (ISO 8601)
@@ -93,19 +97,27 @@ export default function NovelTestPage() {
                 <div className="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="rounded bg-gray-50 p-3">
                     <p className="text-sm text-gray-600">Word Count</p>
-                    <p className="text-xl font-bold">{result.stats.wordCount}</p>
+                    <p className="text-xl font-bold">
+                      {result.stats.wordCount}
+                    </p>
                   </div>
                   <div className="rounded bg-gray-50 p-3">
                     <p className="text-sm text-gray-600">Characters</p>
-                    <p className="text-xl font-bold">{result.stats.charactersAdded}</p>
+                    <p className="text-xl font-bold">
+                      {result.stats.charactersAdded}
+                    </p>
                   </div>
                   <div className="rounded bg-gray-50 p-3">
                     <p className="text-sm text-gray-600">Places</p>
-                    <p className="text-xl font-bold">{result.stats.placesAdded}</p>
+                    <p className="text-xl font-bold">
+                      {result.stats.placesAdded}
+                    </p>
                   </div>
                   <div className="rounded bg-gray-50 p-3">
                     <p className="text-sm text-gray-600">Time (ms)</p>
-                    <p className="text-xl font-bold">{result.stats.executionTime}</p>
+                    <p className="text-xl font-bold">
+                      {result.stats.executionTime}
+                    </p>
                   </div>
                 </div>
 
