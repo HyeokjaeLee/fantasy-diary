@@ -58,13 +58,54 @@ const zWeatherItem = z
   })
   .loose();
 
-const zWeatherSnapshot = z
+const zKmaWeatherSnapshot = z
   .object({
     baseDate: z.string().regex(/^\d{8}$/),
     baseTime: z.string().regex(/^\d{4}$/),
     items: z.array(zWeatherItem).min(1),
   })
   .loose();
+
+const zTemperatureInfo = z
+  .object({
+    degrees: z.number(),
+    formatted: z.string().optional(),
+    unit: z.string().optional(),
+  })
+  .partial()
+  .loose();
+
+const zGoogleWeatherSummary = z
+  .object({
+    conditionText: z.string().min(1),
+    temperature: zTemperatureInfo.nullable(),
+    feelsLike: zTemperatureInfo.nullable(),
+  })
+  .loose();
+
+const zGoogleWeatherSnapshot = z
+  .object({
+    request: z
+      .object({
+        latitude: z.number().optional(),
+        longitude: z.number().optional(),
+        unitsSystem: z.string().optional(),
+        languageCode: z.string().optional(),
+      })
+      .loose()
+      .optional(),
+    current: z
+      .object({
+        summary: zGoogleWeatherSummary,
+      })
+      .loose(),
+  })
+  .loose();
+
+const zWeatherSnapshot = z.union([
+  zKmaWeatherSnapshot,
+  zGoogleWeatherSnapshot,
+]);
 
 // Entries
 const zEntriesCreate = zEscapeFromSeoulEntries
@@ -185,44 +226,103 @@ const deriveWeatherCondition = (
 const deriveWeatherFromSnapshot = (
   snapshot: z.infer<typeof zWeatherSnapshot>,
 ) => {
-  const observationByCategory = new Map<string, string>();
-  for (const item of snapshot.items) {
-    const category = item.category.trim().toUpperCase();
-    if (!category) continue;
+  if (
+    'items' in snapshot &&
+    Array.isArray((snapshot as { items?: unknown }).items)
+  ) {
+    const observationByCategory = new Map<string, string>();
+    const kmaSnapshot = snapshot as z.infer<typeof zKmaWeatherSnapshot>;
+    for (const item of kmaSnapshot.items) {
+      const category = item.category.trim().toUpperCase();
+      if (!category) continue;
 
-    const value = item.obsrValue.trim();
-    if (!value) continue;
+      const value = item.obsrValue.trim();
+      if (!value) continue;
 
-    observationByCategory.set(category, value);
+      observationByCategory.set(category, value);
+    }
+
+    const getValue = (category: string) =>
+      observationByCategory.get(category.toUpperCase()) ?? null;
+
+    const temperatureRaw =
+      getValue('T1H') ?? getValue('TMP') ?? getValue('T3H');
+    const parsedTemperature =
+      temperatureRaw !== null ? Number.parseFloat(temperatureRaw) : Number.NaN;
+    if (!Number.isFinite(parsedTemperature)) {
+      throw new Error(
+        'weather: missing temperature value from weather snapshot',
+      );
+    }
+
+    const roundedTemperature = Math.round(parsedTemperature);
+    if (roundedTemperature < -150 || roundedTemperature > 150) {
+      throw new Error(
+        `weather: unreasonable temperature value (${roundedTemperature})`,
+      );
+    }
+
+    const condition = deriveWeatherCondition(getValue('PTY'), getValue('SKY'));
+    if (!condition) {
+      throw new Error(
+        'weather: missing precipitation/sky categories in weather snapshot',
+      );
+    }
+
+    return { condition, temperature: roundedTemperature };
   }
 
-  const getValue = (category: string) =>
-    observationByCategory.get(category.toUpperCase()) ?? null;
+  if (
+    'current' in snapshot &&
+    snapshot.current &&
+    typeof snapshot.current === 'object'
+  ) {
+    const googleSnapshot = snapshot as z.infer<typeof zGoogleWeatherSnapshot>;
+    const summary = googleSnapshot.current.summary;
+    const conditionText =
+      typeof summary.conditionText === 'string'
+        ? summary.conditionText.trim()
+        : '';
+    if (!conditionText) {
+      throw new Error(
+        'weather: missing conditionText in weather snapshot',
+      );
+    }
 
-  const temperatureRaw = getValue('T1H') ?? getValue('TMP') ?? getValue('T3H');
-  const parsedTemperature =
-    temperatureRaw !== null ? Number.parseFloat(temperatureRaw) : Number.NaN;
-  if (!Number.isFinite(parsedTemperature)) {
-    throw new Error(
-      'weather: missing temperature (category T1H) from geo.gridPlaceWeather response',
-    );
+    const temperatureCandidates = [summary.temperature, summary.feelsLike];
+    let temperatureValue: number | null = null;
+    for (const candidate of temperatureCandidates) {
+      if (
+        candidate &&
+        typeof candidate === 'object' &&
+        !Array.isArray(candidate) &&
+        typeof (candidate as { degrees?: unknown }).degrees === 'number'
+      ) {
+        const degrees = (candidate as { degrees: number }).degrees;
+        if (Number.isFinite(degrees)) {
+          temperatureValue = degrees;
+          break;
+        }
+      }
+    }
+
+    if (temperatureValue === null) {
+      throw new Error(
+        'weather: missing temperature degrees in weather snapshot',
+      );
+    }
+
+    const roundedTemperature = Math.round(temperatureValue);
+    if (roundedTemperature < -150 || roundedTemperature > 150) {
+      throw new Error(
+        `weather: unreasonable temperature value (${roundedTemperature})`,
+      );
+    }
+
+    return { condition: conditionText, temperature: roundedTemperature };
   }
 
-  const roundedTemperature = Math.round(parsedTemperature);
-  if (roundedTemperature < -100 || roundedTemperature > 100) {
-    throw new Error(
-      `weather: unreasonable temperature value (${roundedTemperature})`,
-    );
-  }
-
-  const condition = deriveWeatherCondition(getValue('PTY'), getValue('SKY'));
-  if (!condition) {
-    throw new Error(
-      'weather: missing PTY/SKY categories in geo.gridPlaceWeather response',
-    );
-  }
-
-  return { condition, temperature: roundedTemperature };
+  throw new Error('weather: unsupported snapshot format');
 };
 
 const withEntryDefaults = (
@@ -311,7 +411,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         weather: {
           type: 'object',
           description:
-            'geo.gridPlaceWeather 툴에서 반환된 weather 객체(JSON). baseDate/baseTime/items가 반드시 포함되어야 합니다.',
+            'google.weather.lookup 툴에서 반환된 날씨 스냅샷(JSON). 기존 geo.gridPlaceWeather 결과도 허용하지만 현재 요약정보(current.summary.conditionText 등)가 포함되어야 합니다.',
         },
         created_at: {
           type: 'string',
@@ -384,7 +484,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         weather: {
           type: 'object',
           description:
-            '날씨를 갱신하려면 geo.gridPlaceWeather 툴의 weather 객체(JSON)를 전달하세요.',
+            '날씨를 갱신하려면 google.weather.lookup 툴의 weather 스냅샷(JSON)을 전달하세요.',
         },
       },
       additionalProperties: true,

@@ -225,14 +225,19 @@ export const fetchCurrentWeatherFromGoogle = async (
     'location.longitude': longitude.toString(),
     unitsSystem,
     languageCode,
-    key: ENV.NEXT_GOOGLE_MAP_API_KEY,
   });
+
+  const baseHeaders = {
+    Accept: 'application/json',
+    'X-Goog-Api-Key': ENV.NEXT_GOOGLE_MAP_API_KEY,
+    'X-Goog-FieldMask': '*',
+  } as const;
 
   let response: Response;
   try {
     response = await ky.get(
       `${WEATHER_BASE_URL}/v1/currentConditions:lookup?${searchParams.toString()}`,
-      { headers: { Accept: 'application/json' } },
+      { headers: baseHeaders },
     );
   } catch (error) {
     if (error instanceof HTTPError) {
@@ -283,13 +288,18 @@ export const fetchWeatherForecastFromGoogle = async (
     'location.longitude': longitude.toString(),
     unitsSystem,
     languageCode,
-    key: ENV.NEXT_GOOGLE_MAP_API_KEY,
   };
 
   const forecast: {
     hours?: z.infer<typeof zLookupForecastHoursResponse>;
     days?: z.infer<typeof zLookupForecastDaysResponse>;
   } = {};
+
+  const forecastHeaders = {
+    Accept: 'application/json',
+    'X-Goog-Api-Key': ENV.NEXT_GOOGLE_MAP_API_KEY,
+    'X-Goog-FieldMask': '*',
+  } as const;
 
   if (hours && hours > 0) {
     const params = new URLSearchParams(commonParams);
@@ -301,7 +311,7 @@ export const fetchWeatherForecastFromGoogle = async (
     try {
       const res = await ky.get(
         `${WEATHER_BASE_URL}/v1/forecast/hours:lookup?${params.toString()}`,
-        { headers: { Accept: 'application/json' } },
+        { headers: forecastHeaders },
       );
 
       const contentType = res.headers.get('content-type') ?? '';
@@ -336,7 +346,7 @@ export const fetchWeatherForecastFromGoogle = async (
     try {
       const res = await ky.get(
         `${WEATHER_BASE_URL}/v1/forecast/days:lookup?${params.toString()}`,
-        { headers: { Accept: 'application/json' } },
+        { headers: forecastHeaders },
       );
 
       const contentType = res.headers.get('content-type') ?? '';

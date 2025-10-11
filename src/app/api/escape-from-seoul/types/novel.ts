@@ -10,8 +10,12 @@ export interface ChapterContext {
   currentTime: Date;
   previousChapter?: EscapeFromSeoulEntries;
   weather?: {
-    location: { nx: number; ny: number };
+    location:
+      | { latitude: number; longitude: number }
+      | { nx: number; ny: number };
     data: unknown;
+    unitsSystem?: string;
+    languageCode?: string;
   };
   references: {
     characters: EscapeFromSeoulCharacters[];

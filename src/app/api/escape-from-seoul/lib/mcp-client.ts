@@ -23,7 +23,34 @@ async function callInternalMcp(
   });
 
   if (!response.ok) {
-    throw new Error(`MCP call failed: ${response.statusText}`);
+    let detail: string;
+    try {
+      const bodyText = await response.text();
+      if (!bodyText) {
+        detail = '(empty response body)';
+      } else {
+        try {
+          const parsed = JSON.parse(bodyText) as Record<string, unknown>;
+          const errorField = parsed['error'];
+          let message: unknown;
+          if (errorField && typeof errorField === 'object') {
+            message = (errorField as Record<string, unknown>).message;
+          }
+          detail =
+            typeof message === 'string' && message.length > 0
+              ? message
+              : JSON.stringify(parsed);
+        } catch {
+          detail = bodyText;
+        }
+      }
+    } catch {
+      detail = '(failed to read error body)';
+    }
+
+    throw new Error(
+      `MCP call failed: ${response.status} ${response.statusText} - ${detail}`,
+    );
   }
 
   return response.json();
@@ -39,16 +66,16 @@ type McpTool = {
 export async function getMcpFunctionDeclarations(): Promise<
   FunctionDeclaration[]
 > {
-  // 3개 MCP 서버의 tools/list 병렬 호출
-  const [geoTools, readTools, writeTools] = await Promise.all([
-    callInternalMcp('geo', 'tools/list'),
+  // MCP 서버의 tools/list 병렬 호출
+  const [googleTools, readTools, writeTools] = await Promise.all([
+    callInternalMcp('google', 'tools/list'),
     callInternalMcp('read-db', 'tools/list'),
     callInternalMcp('write-db', 'tools/list'),
   ]);
 
   // 모든 도구 합치기
   const allTools = [
-    ...((geoTools.result?.tools as McpTool[]) || []),
+    ...((googleTools.result?.tools as McpTool[]) || []),
     ...((readTools.result?.tools as McpTool[]) || []),
     ...((writeTools.result?.tools as McpTool[]) || []),
   ];
@@ -78,7 +105,9 @@ export async function executeMcpTool(
 
   // 카테고리별 엔드포인트 매핑
   let endpoint: string;
-  if (category === 'geo') {
+  if (category === 'google') {
+    endpoint = 'google';
+  } else if (category === 'geo') {
     endpoint = 'geo';
   } else if (['entries', 'characters', 'places'].includes(category)) {
     // action에 따라 read-db vs write-db 결정

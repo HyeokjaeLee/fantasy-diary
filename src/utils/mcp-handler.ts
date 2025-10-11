@@ -99,11 +99,22 @@ export const handleMcpRequest = async ({
       id: request.id,
     });
   } catch (e) {
+    const errorMessage =
+      e instanceof Error ? e.message : JsonRpcErrorMessage.UnknownError;
+    const errorData =
+      e instanceof Error
+        ? { stack: e.stack ?? null, name: e.name ?? null }
+        : { error: e };
+    console.error(
+      `[MCP] ${body?.method ?? 'unknown method'} failed: ${errorMessage}`,
+      e,
+    );
+
     return NextResponse.jsonRpcFail({
       id: body?.id ?? null,
       code: JsonRpcErrorCode.UnknownError,
-      message:
-        e instanceof Error ? e.message : JsonRpcErrorMessage.UnknownError,
+      message: errorMessage,
+      data: errorData,
     });
   }
 };

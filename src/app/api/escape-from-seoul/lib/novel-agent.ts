@@ -147,6 +147,19 @@ export class NovelWritingAgent {
     return null;
   }
 
+  private parseCoordinate(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number.parseFloat(value);
+
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+  }
+
   private mergeCharacterReference(
     source: Record<string, unknown>,
     fallback?: EscapeFromSeoulCharacters,
@@ -402,6 +415,50 @@ export class NovelWritingAgent {
     rawResult: string,
   ) {
     const canonicalName = toolName.replace(/_/g, '.');
+    if (canonicalName === 'google.weather.lookup') {
+      const parsed = this.tryParseJson(rawResult);
+      const resultRecord = this.toRecord(parsed);
+      if (resultRecord) {
+        const argsRecord = this.toRecord(args);
+        const requestRecord = this.toRecord(resultRecord.request);
+        const latitude =
+          this.parseCoordinate(argsRecord?.latitude) ??
+          this.parseCoordinate(requestRecord?.latitude);
+        const longitude =
+          this.parseCoordinate(argsRecord?.longitude) ??
+          this.parseCoordinate(requestRecord?.longitude);
+        const unitsSystem =
+          (typeof argsRecord?.unitsSystem === 'string'
+            ? argsRecord.unitsSystem
+            : undefined) ??
+          (typeof requestRecord?.unitsSystem === 'string'
+            ? requestRecord.unitsSystem
+            : undefined);
+        const languageCode =
+          (typeof argsRecord?.languageCode === 'string'
+            ? argsRecord.languageCode
+            : undefined) ??
+          (typeof requestRecord?.languageCode === 'string'
+            ? requestRecord.languageCode
+            : undefined);
+
+        const location =
+          typeof latitude === 'number' && typeof longitude === 'number'
+            ? { latitude, longitude }
+            : this.context.weather?.location;
+
+        if (location) {
+          this.context.weather = {
+            location,
+            data: resultRecord,
+            unitsSystem: unitsSystem ?? this.context.weather?.unitsSystem,
+            languageCode: languageCode ?? this.context.weather?.languageCode,
+          };
+        }
+      }
+
+      return;
+    }
     if (canonicalName === 'geo.gridPlaceWeather') {
       const parsed = this.tryParseJson(rawResult);
       const resultRecord = this.toRecord(parsed);
@@ -416,17 +473,59 @@ export class NovelWritingAgent {
         const argsRecord = this.toRecord(args);
         const nx = this.parseGridCoordinate(argsRecord?.nx ?? null);
         const ny = this.parseGridCoordinate(argsRecord?.ny ?? null);
+        const previousWeather = this.context.weather;
         if (typeof nx === 'number' && typeof ny === 'number') {
           this.context.weather = {
             location: { nx, ny },
             data: weatherValue,
+            unitsSystem: previousWeather?.unitsSystem ?? 'METRIC',
+            languageCode: previousWeather?.languageCode,
           };
-        } else if (this.context.weather?.location) {
+        } else if (previousWeather?.location) {
           this.context.weather = {
-            location: this.context.weather.location,
+            location: previousWeather.location,
             data: weatherValue,
+            unitsSystem: previousWeather.unitsSystem,
+            languageCode: previousWeather.languageCode,
           };
         }
+      }
+
+      return;
+    }
+    if (canonicalName === 'google.places.describe') {
+      const parsed = this.tryParseJson(rawResult);
+      const resultRecord = this.toRecord(parsed);
+      if (!resultRecord) return;
+      const detailRecord = this.toRecord(resultRecord.detail);
+      if (!detailRecord) return;
+
+      const generativeSummary = this.toRecord(detailRecord.generativeSummary);
+      const placeId =
+        this.stringOr(detailRecord.id, '') ||
+        this.stringOr(detailRecord.resourceName, '');
+      const placeName =
+        this.stringOr(detailRecord.displayName, '') ||
+        this.stringOr(detailRecord.formattedAddress, '');
+      const situation =
+        this.stringOr(generativeSummary?.overview, '') ||
+        this.stringOr(detailRecord.editorialSummary, '') ||
+        this.stringOr(generativeSummary?.disclosure, '');
+
+      const placeRecord: Record<string, unknown> = {};
+      if (placeId) {
+        placeRecord.id = placeId;
+      }
+      if (placeName) {
+        placeRecord.name = placeName;
+      }
+      if (situation) {
+        placeRecord.current_situation = situation;
+      }
+
+      if (Object.keys(placeRecord).length > 0) {
+        this.upsertPlace(placeRecord);
+        this.updatePlaceReference(placeRecord);
       }
 
       return;
@@ -762,16 +861,19 @@ export class NovelWritingAgent {
     parts.push('1. 이전 챕터 분석 (필요시 entries.get 사용)');
     parts.push('2. 주요 캐릭터의 현재 위치 파악');
     parts.push(
-      '3. 해당 위치의 실시간 날씨 조회 (geo.gridPlaceWeather) 후 체감 묘사로 활용할 요소 정리',
+      '3. 배경으로 사용할 실제 위치의 위도·경도를 결정하고 기록 (예: 서울 시청 37.5665, 126.9780)',
     );
-    parts.push('4. 시간 경과와 이동 가능 거리 계산');
-    parts.push('5. 다음 챕터의 주요 사건과 전개 방향 결정');
     parts.push(
-      '6. 필요한 새 캐릭터나 장소 구상 및 등장 시 MCP write 도구 사용 계획 수립',
+      '4. 결정한 좌표로 google.weather.lookup을 호출해 체감 묘사에 활용할 요소 정리',
+    );
+    parts.push('5. 시간 경과와 이동 가능 거리 계산');
+    parts.push('6. 다음 챕터의 주요 사건과 전개 방향 결정');
+    parts.push(
+      '7. 필요한 새 캐릭터나 장소 구상 및 등장 시 MCP write 도구 사용 계획 수립',
     );
     parts.push('');
     parts.push(
-      '구상한 내용을 자세히 설명하되 시간·날씨는 감각적 표현 중심으로 정리하고 수치 나열은 피해주세요. 새 캐릭터나 장소를 확정하면 해당 정보를 DB에 저장하기 위해 `characters.create`, `places.create` 호출 전략도 메모하세요.',
+      '구상한 내용을 자세히 설명하되 선택한 좌표(lat/lon)와 google.weather.lookup 결과는 감각적으로 요약하고 수치 나열은 피해주세요. 새 캐릭터나 장소를 확정하면 해당 정보를 DB에 저장하기 위해 `characters.create`, `places.create` 호출 전략도 메모하세요.',
     );
 
     return parts.join('\n');
@@ -795,6 +897,7 @@ export class NovelWritingAgent {
       '- 이전 챕터와의 자연스러운 연결',
       '- 새롭게 등장시키는 캐릭터·장소는 본문에 묘사',
       '- 생생한 묘사와 현실적인 디테일',
+      '- 장소 묘사를 강화하기 위해 필요하면 google.places.describe 도구로 정보를 수집하고 본문에 자연스럽게 반영',
       '',
       '작성된 본문만 출력해주세요. (다른 설명 없이)',
     ];

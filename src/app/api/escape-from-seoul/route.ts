@@ -310,7 +310,7 @@ async function saveChapterToDb(
       : null;
   if (!weatherSnapshot) {
     throw new Error(
-      'Missing weather snapshot. Execute geo.gridPlaceWeather before saving the chapter.',
+      'Missing weather snapshot. Execute google.weather.lookup before saving the chapter.',
     );
   }
   const primaryLocationCandidate =
