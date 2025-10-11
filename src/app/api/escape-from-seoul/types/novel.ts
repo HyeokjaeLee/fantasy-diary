@@ -15,7 +15,7 @@ export interface ChapterContext {
       | { nx: number; ny: number };
     data: unknown;
     unitsSystem?: string;
-    languageCode?: string;
+    timeZone?: string;
   };
   references: {
     characters: EscapeFromSeoulCharacters[];

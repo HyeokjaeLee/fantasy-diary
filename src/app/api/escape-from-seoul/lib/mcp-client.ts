@@ -67,7 +67,8 @@ export async function getMcpFunctionDeclarations(): Promise<
   FunctionDeclaration[]
 > {
   // MCP 서버의 tools/list 병렬 호출
-  const [googleTools, readTools, writeTools] = await Promise.all([
+  const [weatherTools, googleTools, readTools, writeTools] = await Promise.all([
+    callInternalMcp('weather', 'tools/list'),
     callInternalMcp('google', 'tools/list'),
     callInternalMcp('read-db', 'tools/list'),
     callInternalMcp('write-db', 'tools/list'),
@@ -75,6 +76,7 @@ export async function getMcpFunctionDeclarations(): Promise<
 
   // 모든 도구 합치기
   const allTools = [
+    ...((weatherTools.result?.tools as McpTool[]) || []),
     ...((googleTools.result?.tools as McpTool[]) || []),
     ...((readTools.result?.tools as McpTool[]) || []),
     ...((writeTools.result?.tools as McpTool[]) || []),
@@ -105,7 +107,9 @@ export async function executeMcpTool(
 
   // 카테고리별 엔드포인트 매핑
   let endpoint: string;
-  if (category === 'google') {
+  if (category === 'weather') {
+    endpoint = 'weather';
+  } else if (category === 'google') {
     endpoint = 'google';
   } else if (category === 'geo') {
     endpoint = 'geo';

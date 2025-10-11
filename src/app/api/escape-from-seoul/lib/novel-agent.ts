@@ -415,7 +415,7 @@ export class NovelWritingAgent {
     rawResult: string,
   ) {
     const canonicalName = toolName.replace(/_/g, '.');
-    if (canonicalName === 'google.weather.lookup') {
+    if (canonicalName === 'weather.openMeteo.lookup') {
       const parsed = this.tryParseJson(rawResult);
       const resultRecord = this.toRecord(parsed);
       if (resultRecord) {
@@ -434,12 +434,12 @@ export class NovelWritingAgent {
           (typeof requestRecord?.unitsSystem === 'string'
             ? requestRecord.unitsSystem
             : undefined);
-        const languageCode =
-          (typeof argsRecord?.languageCode === 'string'
-            ? argsRecord.languageCode
+        const timezone =
+          (typeof argsRecord?.timezone === 'string'
+            ? argsRecord.timezone
             : undefined) ??
-          (typeof requestRecord?.languageCode === 'string'
-            ? requestRecord.languageCode
+          (typeof requestRecord?.timezone === 'string'
+            ? requestRecord.timezone
             : undefined);
 
         const location =
@@ -452,41 +452,7 @@ export class NovelWritingAgent {
             location,
             data: resultRecord,
             unitsSystem: unitsSystem ?? this.context.weather?.unitsSystem,
-            languageCode: languageCode ?? this.context.weather?.languageCode,
-          };
-        }
-      }
-
-      return;
-    }
-    if (canonicalName === 'geo.gridPlaceWeather') {
-      const parsed = this.tryParseJson(rawResult);
-      const resultRecord = this.toRecord(parsed);
-      const weatherValue =
-        resultRecord &&
-        typeof resultRecord.weather === 'object' &&
-        resultRecord.weather !== null &&
-        !Array.isArray(resultRecord.weather)
-          ? (resultRecord.weather as Record<string, unknown>)
-          : null;
-      if (weatherValue) {
-        const argsRecord = this.toRecord(args);
-        const nx = this.parseGridCoordinate(argsRecord?.nx ?? null);
-        const ny = this.parseGridCoordinate(argsRecord?.ny ?? null);
-        const previousWeather = this.context.weather;
-        if (typeof nx === 'number' && typeof ny === 'number') {
-          this.context.weather = {
-            location: { nx, ny },
-            data: weatherValue,
-            unitsSystem: previousWeather?.unitsSystem ?? 'METRIC',
-            languageCode: previousWeather?.languageCode,
-          };
-        } else if (previousWeather?.location) {
-          this.context.weather = {
-            location: previousWeather.location,
-            data: weatherValue,
-            unitsSystem: previousWeather.unitsSystem,
-            languageCode: previousWeather.languageCode,
+            timeZone: timezone ?? this.context.weather?.timeZone,
           };
         }
       }
@@ -864,7 +830,7 @@ export class NovelWritingAgent {
       '3. 배경으로 사용할 실제 위치의 위도·경도를 결정하고 기록 (예: 서울 시청 37.5665, 126.9780)',
     );
     parts.push(
-      '4. 결정한 좌표로 google.weather.lookup을 호출해 체감 묘사에 활용할 요소 정리',
+      '4. 결정한 좌표로 weather.openMeteo.lookup을 호출해 체감 묘사에 활용할 요소 정리',
     );
     parts.push('5. 시간 경과와 이동 가능 거리 계산');
     parts.push('6. 다음 챕터의 주요 사건과 전개 방향 결정');
@@ -873,7 +839,7 @@ export class NovelWritingAgent {
     );
     parts.push('');
     parts.push(
-      '구상한 내용을 자세히 설명하되 선택한 좌표(lat/lon)와 google.weather.lookup 결과는 감각적으로 요약하고 수치 나열은 피해주세요. 새 캐릭터나 장소를 확정하면 해당 정보를 DB에 저장하기 위해 `characters.create`, `places.create` 호출 전략도 메모하세요.',
+      '구상한 내용을 자세히 설명하되 선택한 좌표(lat/lon)와 weather.openMeteo.lookup 결과는 감각적으로 요약하고 수치 나열은 피해주세요. 새 캐릭터나 장소를 확정하면 해당 정보를 DB에 저장하기 위해 `characters.create`, `places.create` 호출 전략도 메모하세요.',
     );
 
     return parts.join('\n');

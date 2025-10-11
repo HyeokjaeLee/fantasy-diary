@@ -47,25 +47,6 @@ const configureSupabaseRest = () => {
 
 const zId = z.object({ id: z.string().uuid() });
 
-const zWeatherItem = z
-  .object({
-    category: z.string().min(1),
-    obsrValue: z
-      .union([z.string(), z.number()])
-      .transform((value) =>
-        typeof value === 'string' ? value.trim() : value.toString(),
-      ),
-  })
-  .loose();
-
-const zKmaWeatherSnapshot = z
-  .object({
-    baseDate: z.string().regex(/^\d{8}$/),
-    baseTime: z.string().regex(/^\d{4}$/),
-    items: z.array(zWeatherItem).min(1),
-  })
-  .loose();
-
 const zTemperatureInfo = z
   .object({
     degrees: z.number(),
@@ -83,7 +64,7 @@ const zGoogleWeatherSummary = z
   })
   .loose();
 
-const zGoogleWeatherSnapshot = z
+const zLegacyGoogleWeatherSnapshot = z
   .object({
     request: z
       .object({
@@ -102,9 +83,97 @@ const zGoogleWeatherSnapshot = z
   })
   .loose();
 
+const zOpenMeteoWind = z
+  .object({
+    speed: z.number().nullable().optional(),
+    gust: z.number().nullable().optional(),
+    direction: z.number().nullable().optional(),
+    cardinal: z.string().nullable().optional(),
+  })
+  .partial()
+  .loose();
+
+const zOpenMeteoCurrent = z
+  .object({
+    time: z.string().optional(),
+    weatherCode: z.number().nullable().optional(),
+    weatherDescription: z.string().nullable().optional(),
+    temperature: zTemperatureInfo.nullable().optional(),
+    apparentTemperature: zTemperatureInfo.nullable().optional(),
+    humidity: z.number().nullable().optional(),
+    precipitation: z.number().nullable().optional(),
+    wind: zOpenMeteoWind.optional(),
+    visibilityKm: z.number().nullable().optional(),
+  })
+  .partial()
+  .loose();
+
+const zOpenMeteoHourlyEntry = z
+  .object({
+    time: z.string().optional(),
+    temperature: zTemperatureInfo.nullable().optional(),
+    apparentTemperature: zTemperatureInfo.nullable().optional(),
+    precipitationProbability: z.number().nullable().optional(),
+    weatherCode: z.number().nullable().optional(),
+    weatherDescription: z.string().nullable().optional(),
+    wind: zOpenMeteoWind.optional(),
+    humidity: z.number().nullable().optional(),
+    visibilityKm: z.number().nullable().optional(),
+  })
+  .partial()
+  .loose();
+
+const zOpenMeteoDailyEntry = z
+  .object({
+    date: z.string().optional(),
+    weatherCode: z.number().nullable().optional(),
+    weatherDescription: z.string().nullable().optional(),
+    temperatureMax: zTemperatureInfo.nullable().optional(),
+    temperatureMin: zTemperatureInfo.nullable().optional(),
+    apparentTemperatureMax: zTemperatureInfo.nullable().optional(),
+    apparentTemperatureMin: zTemperatureInfo.nullable().optional(),
+    precipitationProbabilityMax: z.number().nullable().optional(),
+    sunrise: z.string().nullable().optional(),
+    sunset: z.string().nullable().optional(),
+  })
+  .partial()
+  .loose();
+
+const zOpenMeteoWeatherSnapshot = z
+  .object({
+    request: z
+      .object({
+        latitude: z.number().optional(),
+        longitude: z.number().optional(),
+        unitsSystem: z.string().optional(),
+        hourCount: z.number().optional(),
+        dayCount: z.number().optional(),
+        timezone: z.string().optional(),
+      })
+      .loose()
+      .optional(),
+    current: zOpenMeteoCurrent.optional(),
+    forecast: z
+      .object({
+        hourly: z.array(zOpenMeteoHourlyEntry).optional(),
+        daily: z.array(zOpenMeteoDailyEntry).optional(),
+      })
+      .loose()
+      .optional(),
+    ai: z
+      .object({
+        hints: z.array(z.string()).optional(),
+        narrativePrompts: z.array(z.string()).optional(),
+      })
+      .loose()
+      .optional(),
+    raw: z.unknown().optional(),
+  })
+  .loose();
+
 const zWeatherSnapshot = z.union([
-  zKmaWeatherSnapshot,
-  zGoogleWeatherSnapshot,
+  zLegacyGoogleWeatherSnapshot,
+  zOpenMeteoWeatherSnapshot,
 ]);
 
 // Entries
@@ -174,110 +243,17 @@ const stripUndefined = <T extends Record<string, unknown>>(
   return Object.fromEntries(entries) as Partial<T>;
 };
 
-const deriveWeatherCondition = (
-  ptyRaw: string | null,
-  skyRaw: string | null,
-) => {
-  if (ptyRaw !== null && ptyRaw.length > 0) {
-    const precipitationCode = Number.parseInt(ptyRaw, 10);
-    if (Number.isFinite(precipitationCode) && precipitationCode > 0) {
-      switch (precipitationCode) {
-        case 1:
-          return 'rain';
-        case 2:
-          return 'rain and snow';
-        case 3:
-          return 'snow';
-        case 4:
-          return 'showers';
-        case 5:
-          return 'drizzle';
-        case 6:
-          return 'sleet';
-        case 7:
-          return 'flurries';
-        default:
-          return 'precipitation';
-      }
-    }
-  }
-
-  if (skyRaw !== null && skyRaw.length > 0) {
-    const skyCode = Number.parseInt(skyRaw, 10);
-    if (Number.isFinite(skyCode) && skyCode > 0) {
-      switch (skyCode) {
-        case 1:
-          return 'clear';
-        case 2:
-          return 'partly cloudy';
-        case 3:
-          return 'mostly cloudy';
-        case 4:
-          return 'overcast';
-        default:
-          return 'cloudy';
-      }
-    }
-  }
-
-  return null;
-};
-
 const deriveWeatherFromSnapshot = (
   snapshot: z.infer<typeof zWeatherSnapshot>,
 ) => {
   if (
-    'items' in snapshot &&
-    Array.isArray((snapshot as { items?: unknown }).items)
-  ) {
-    const observationByCategory = new Map<string, string>();
-    const kmaSnapshot = snapshot as z.infer<typeof zKmaWeatherSnapshot>;
-    for (const item of kmaSnapshot.items) {
-      const category = item.category.trim().toUpperCase();
-      if (!category) continue;
-
-      const value = item.obsrValue.trim();
-      if (!value) continue;
-
-      observationByCategory.set(category, value);
-    }
-
-    const getValue = (category: string) =>
-      observationByCategory.get(category.toUpperCase()) ?? null;
-
-    const temperatureRaw =
-      getValue('T1H') ?? getValue('TMP') ?? getValue('T3H');
-    const parsedTemperature =
-      temperatureRaw !== null ? Number.parseFloat(temperatureRaw) : Number.NaN;
-    if (!Number.isFinite(parsedTemperature)) {
-      throw new Error(
-        'weather: missing temperature value from weather snapshot',
-      );
-    }
-
-    const roundedTemperature = Math.round(parsedTemperature);
-    if (roundedTemperature < -150 || roundedTemperature > 150) {
-      throw new Error(
-        `weather: unreasonable temperature value (${roundedTemperature})`,
-      );
-    }
-
-    const condition = deriveWeatherCondition(getValue('PTY'), getValue('SKY'));
-    if (!condition) {
-      throw new Error(
-        'weather: missing precipitation/sky categories in weather snapshot',
-      );
-    }
-
-    return { condition, temperature: roundedTemperature };
-  }
-
-  if (
     'current' in snapshot &&
     snapshot.current &&
-    typeof snapshot.current === 'object'
+    typeof snapshot.current === 'object' &&
+    'summary' in (snapshot.current as Record<string, unknown>)
   ) {
-    const googleSnapshot = snapshot as z.infer<typeof zGoogleWeatherSnapshot>;
+    const googleSnapshot =
+      snapshot as z.infer<typeof zLegacyGoogleWeatherSnapshot>;
     const summary = googleSnapshot.current.summary;
     const conditionText =
       typeof summary.conditionText === 'string'
@@ -309,6 +285,49 @@ const deriveWeatherFromSnapshot = (
     if (temperatureValue === null) {
       throw new Error(
         'weather: missing temperature degrees in weather snapshot',
+      );
+    }
+
+    const roundedTemperature = Math.round(temperatureValue);
+    if (roundedTemperature < -150 || roundedTemperature > 150) {
+      throw new Error(
+        `weather: unreasonable temperature value (${roundedTemperature})`,
+      );
+    }
+
+    return { condition: conditionText, temperature: roundedTemperature };
+  }
+
+  if (
+    'current' in snapshot &&
+    snapshot.current &&
+    typeof snapshot.current === 'object'
+  ) {
+    const openSnapshot = snapshot as z.infer<typeof zOpenMeteoWeatherSnapshot>;
+    const summary = openSnapshot.current;
+    const conditionText =
+      summary?.weatherDescription?.trim() ??
+      (typeof summary?.weatherCode === 'number'
+        ? `weather code ${summary.weatherCode}`
+        : '알 수 없는 날씨');
+    if (!conditionText) {
+      throw new Error(
+        'weather: missing condition text in weather snapshot',
+      );
+    }
+
+    const candidateValues = [
+      summary?.temperature?.value,
+      summary?.apparentTemperature?.value,
+    ];
+    const temperatureValue =
+      candidateValues.find(
+        (value): value is number =>
+          typeof value === 'number' && Number.isFinite(value),
+      ) ?? null;
+    if (temperatureValue === null) {
+      throw new Error(
+        'weather: missing temperature value in weather snapshot',
       );
     }
 
@@ -411,7 +430,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         weather: {
           type: 'object',
           description:
-            'google.weather.lookup 툴에서 반환된 날씨 스냅샷(JSON). 기존 geo.gridPlaceWeather 결과도 허용하지만 현재 요약정보(current.summary.conditionText 등)가 포함되어야 합니다.',
+            'weather.openMeteo.lookup 툴에서 반환된 날씨 스냅샷(JSON). legacy google.weather.lookup 결과도 허용합니다.',
         },
         created_at: {
           type: 'string',
@@ -484,7 +503,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         weather: {
           type: 'object',
           description:
-            '날씨를 갱신하려면 google.weather.lookup 툴의 weather 스냅샷(JSON)을 전달하세요.',
+            '날씨를 갱신하려면 weather.openMeteo.lookup 툴의 weather 스냅샷(JSON)을 전달하세요.',
         },
       },
       additionalProperties: true,
