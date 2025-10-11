@@ -35,7 +35,7 @@ export class NovelWritingAgent {
     functionDeclarations: FunctionDeclaration[],
   ) {
     this.client = new GoogleGenAI({
-      apiKey: ENV.NEXT_GEMINI_API_KEY,
+      apiKey: ENV.NEXT_GOOGLE_GEMINI_API_KEY,
     });
     this.context = context;
     this.functionDeclarations = functionDeclarations;
@@ -132,6 +132,19 @@ export class NovelWritingAgent {
       .filter((item): item is string => item !== null);
 
     return items.length > 0 ? items : fallback;
+  }
+
+  private parseGridCoordinate(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isInteger(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number.parseInt(value, 10);
+
+      return Number.isInteger(parsed) ? parsed : null;
+    }
+
+    return null;
   }
 
   private mergeCharacterReference(
@@ -389,6 +402,35 @@ export class NovelWritingAgent {
     rawResult: string,
   ) {
     const canonicalName = toolName.replace(/_/g, '.');
+    if (canonicalName === 'geo.gridPlaceWeather') {
+      const parsed = this.tryParseJson(rawResult);
+      const resultRecord = this.toRecord(parsed);
+      const weatherValue =
+        resultRecord &&
+        typeof resultRecord.weather === 'object' &&
+        resultRecord.weather !== null &&
+        !Array.isArray(resultRecord.weather)
+          ? (resultRecord.weather as Record<string, unknown>)
+          : null;
+      if (weatherValue) {
+        const argsRecord = this.toRecord(args);
+        const nx = this.parseGridCoordinate(argsRecord?.nx ?? null);
+        const ny = this.parseGridCoordinate(argsRecord?.ny ?? null);
+        if (typeof nx === 'number' && typeof ny === 'number') {
+          this.context.weather = {
+            location: { nx, ny },
+            data: weatherValue,
+          };
+        } else if (this.context.weather?.location) {
+          this.context.weather = {
+            location: this.context.weather.location,
+            data: weatherValue,
+          };
+        }
+      }
+
+      return;
+    }
     if (
       canonicalName !== 'characters.create' &&
       canonicalName !== 'characters.update' &&

@@ -18,6 +18,11 @@ import type {
   EscapeFromSeoulEntries,
   EscapeFromSeoulPlaces,
 } from '@supabase-api/types.gen';
+import {
+  zEscapeFromSeoulCharacters,
+  zEscapeFromSeoulEntries,
+  zEscapeFromSeoulPlaces,
+} from '@supabase-api/zod.gen';
 import { z } from 'zod';
 
 import { ENV } from '@/env';
@@ -42,105 +47,82 @@ const configureSupabaseRest = () => {
 
 const zId = z.object({ id: z.string().uuid() });
 
+const zWeatherItem = z
+  .object({
+    category: z.string().min(1),
+    obsrValue: z
+      .union([z.string(), z.number()])
+      .transform((value) =>
+        typeof value === 'string' ? value.trim() : value.toString(),
+      ),
+  })
+  .loose();
+
+const zWeatherSnapshot = z
+  .object({
+    baseDate: z.string().regex(/^\d{8}$/),
+    baseTime: z.string().regex(/^\d{4}$/),
+    items: z.array(zWeatherItem).min(1),
+  })
+  .loose();
+
 // Entries
-const zEntriesCreate = z
-  .object({
-    content: z.string(),
-    id: z.string().uuid().optional(),
-    created_at: z.string().datetime().optional(),
-    summary: z.string().optional(),
-    weather_condition: z.string().optional(),
-    weather_temperature: z.number().optional(),
-    location: z.string().optional(),
-    mood: z.string().optional(),
-    major_events: z.array(z.string()).optional(),
-    appeared_characters: z.array(z.string()).optional(),
-    emotional_tone: z.string().optional(),
-    story_tags: z.array(z.string()).optional(),
-    previous_context: z.string().optional(),
-    next_context_hints: z.string().optional(),
+const zEntriesCreate = zEscapeFromSeoulEntries
+  .extend({
+    weather: zWeatherSnapshot,
   })
-  .passthrough();
+  .loose();
 
-const zEntriesUpdate = z
-  .object({
+const zEntriesUpdate = zEscapeFromSeoulEntries
+  .partial()
+  .extend({
     id: z.string().uuid(),
-    content: z.string().optional(),
-    created_at: z.string().datetime().optional(),
-    summary: z.string().optional(),
-    weather_condition: z.string().optional(),
-    weather_temperature: z.number().optional(),
-    location: z.string().optional(),
-    mood: z.string().optional(),
-    major_events: z.array(z.string()).optional(),
-    appeared_characters: z.array(z.string()).optional(),
-    emotional_tone: z.string().optional(),
-    story_tags: z.array(z.string()).optional(),
-    previous_context: z.string().optional(),
-    next_context_hints: z.string().optional(),
+    weather: zWeatherSnapshot.optional(),
   })
-  .passthrough();
+  .loose();
 
-// Characters
-const zCharactersCreate = z
-  .object({
-    name: z.string(),
+const zCharactersCreate = zEscapeFromSeoulCharacters
+  .partial()
+  .extend({
     id: z.string().uuid().optional(),
-    personality: z.string().optional(),
-    background: z.string().optional(),
-    appearance: z.string().optional(),
-    current_location: z.string().optional(),
-    relationships: z.unknown().optional(),
-    major_events: z.array(z.string()).optional(),
-    character_traits: z.array(z.string()).optional(),
-    current_status: z.string().optional(),
-    first_appeared_at: z.string().datetime().optional(),
-    last_updated: z.string().datetime().optional(),
+    name: zEscapeFromSeoulCharacters.shape.name,
   })
-  .passthrough();
+  .loose();
 
-const zCharactersUpdate = z
-  .object({
+const zCharactersUpdate = zEscapeFromSeoulCharacters
+  .partial()
+  .extend({
     id: z.string().uuid(),
-    name: z.string().optional(),
-    personality: z.string().optional(),
-    background: z.string().optional(),
-    appearance: z.string().optional(),
-    current_location: z.string().optional(),
-    relationships: z.unknown().optional(),
-    major_events: z.array(z.string()).optional(),
-    character_traits: z.array(z.string()).optional(),
-    current_status: z.string().optional(),
-    first_appeared_at: z.string().datetime().optional(),
-    last_updated: z.string().datetime().optional(),
   })
-  .passthrough();
+  .loose();
 
-// Places
-const zPlacesCreate = z
-  .object({
-    name: z.string(),
+const zPlacesCreate = zEscapeFromSeoulPlaces
+  .partial()
+  .extend({
     id: z.string().uuid().optional(),
-    current_situation: z.string().optional(),
+    name: zEscapeFromSeoulPlaces.shape.name,
+    current_situation:
+      zEscapeFromSeoulPlaces.shape.current_situation.optional(),
   })
-  .passthrough();
+  .loose();
 
-const zPlacesUpdate = z
-  .object({
+const zPlacesUpdate = zEscapeFromSeoulPlaces
+  .partial()
+  .extend({
     id: z.string().uuid(),
-    name: z.string().optional(),
-    current_situation: z.string().optional(),
   })
-  .passthrough();
+  .loose();
 
 const toStringArray = (value: unknown, fallback: string[] = []): string[] => {
-  if (Array.isArray(value)) {
-    return value.map((item) =>
-      typeof item === 'string' ? item : String(item),
-    );
+  if (!Array.isArray(value)) {
+    return fallback;
   }
 
-  return fallback;
+  const items = value
+    .map((item) => (typeof item === 'string' ? item : String(item)).trim())
+    .filter((item) => item.length > 0);
+
+  return items.length > 0 ? items : fallback;
 };
 
 const stripUndefined = <T extends Record<string, unknown>>(
@@ -151,26 +133,125 @@ const stripUndefined = <T extends Record<string, unknown>>(
   return Object.fromEntries(entries) as Partial<T>;
 };
 
+const deriveWeatherCondition = (
+  ptyRaw: string | null,
+  skyRaw: string | null,
+) => {
+  if (ptyRaw !== null && ptyRaw.length > 0) {
+    const precipitationCode = Number.parseInt(ptyRaw, 10);
+    if (Number.isFinite(precipitationCode) && precipitationCode > 0) {
+      switch (precipitationCode) {
+        case 1:
+          return 'rain';
+        case 2:
+          return 'rain and snow';
+        case 3:
+          return 'snow';
+        case 4:
+          return 'showers';
+        case 5:
+          return 'drizzle';
+        case 6:
+          return 'sleet';
+        case 7:
+          return 'flurries';
+        default:
+          return 'precipitation';
+      }
+    }
+  }
+
+  if (skyRaw !== null && skyRaw.length > 0) {
+    const skyCode = Number.parseInt(skyRaw, 10);
+    if (Number.isFinite(skyCode) && skyCode > 0) {
+      switch (skyCode) {
+        case 1:
+          return 'clear';
+        case 2:
+          return 'partly cloudy';
+        case 3:
+          return 'mostly cloudy';
+        case 4:
+          return 'overcast';
+        default:
+          return 'cloudy';
+      }
+    }
+  }
+
+  return null;
+};
+
+const deriveWeatherFromSnapshot = (
+  snapshot: z.infer<typeof zWeatherSnapshot>,
+) => {
+  const observationByCategory = new Map<string, string>();
+  for (const item of snapshot.items) {
+    const category = item.category.trim().toUpperCase();
+    if (!category) continue;
+
+    const value = item.obsrValue.trim();
+    if (!value) continue;
+
+    observationByCategory.set(category, value);
+  }
+
+  const getValue = (category: string) =>
+    observationByCategory.get(category.toUpperCase()) ?? null;
+
+  const temperatureRaw = getValue('T1H') ?? getValue('TMP') ?? getValue('T3H');
+  const parsedTemperature =
+    temperatureRaw !== null ? Number.parseFloat(temperatureRaw) : Number.NaN;
+  if (!Number.isFinite(parsedTemperature)) {
+    throw new Error(
+      'weather: missing temperature (category T1H) from geo.gridPlaceWeather response',
+    );
+  }
+
+  const roundedTemperature = Math.round(parsedTemperature);
+  if (roundedTemperature < -100 || roundedTemperature > 100) {
+    throw new Error(
+      `weather: unreasonable temperature value (${roundedTemperature})`,
+    );
+  }
+
+  const condition = deriveWeatherCondition(getValue('PTY'), getValue('SKY'));
+  if (!condition) {
+    throw new Error(
+      'weather: missing PTY/SKY categories in geo.gridPlaceWeather response',
+    );
+  }
+
+  return { condition, temperature: roundedTemperature };
+};
+
 const withEntryDefaults = (
   parsed: z.infer<typeof zEntriesCreate>,
 ): EscapeFromSeoulEntries => {
   const nowIso = new Date().toISOString();
+  const weather = deriveWeatherFromSnapshot(parsed.weather);
+  const majorEvents = toStringArray(parsed.major_events);
+  const appearedCharacters = toStringArray(parsed.appeared_characters);
+  const storyTags = toStringArray(parsed.story_tags);
+  if (storyTags.length === 0) {
+    throw new Error('story_tags must contain at least one tag');
+  }
 
   return {
     id: parsed.id ?? randomUUID(),
     created_at: parsed.created_at ?? nowIso,
     content: parsed.content,
-    summary: parsed.summary ?? '',
-    weather_condition: parsed.weather_condition ?? '',
-    weather_temperature: parsed.weather_temperature ?? 0,
-    location: parsed.location ?? '',
-    mood: parsed.mood ?? '',
-    major_events: toStringArray(parsed.major_events),
-    appeared_characters: toStringArray(parsed.appeared_characters),
-    emotional_tone: parsed.emotional_tone ?? '',
-    story_tags: toStringArray(parsed.story_tags),
-    previous_context: parsed.previous_context ?? '',
-    next_context_hints: parsed.next_context_hints ?? '',
+    summary: parsed.summary.trim(),
+    weather_condition: weather.condition,
+    weather_temperature: weather.temperature,
+    location: parsed.location.trim(),
+    mood: parsed.mood.trim(),
+    major_events: majorEvents,
+    appeared_characters: appearedCharacters,
+    emotional_tone: parsed.emotional_tone.trim(),
+    story_tags: storyTags,
+    previous_context: parsed.previous_context.trim(),
+    next_context_hints: parsed.next_context_hints.trim(),
   };
 };
 
@@ -211,10 +292,65 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       '새로운 일기를 생성합니다. 작성한 스토리 텍스트를 DB에 저장할 때 사용하세요. content 필드에 마크다운 형식의 본문을 포함해야 합니다.',
     inputSchema: {
       type: 'object',
-      required: ['content'],
+      required: [
+        'content',
+        'weather',
+        'summary',
+        'location',
+        'mood',
+        'major_events',
+        'appeared_characters',
+        'emotional_tone',
+        'story_tags',
+        'previous_context',
+        'next_context_hints',
+      ],
       properties: {
         content: { type: 'string', description: '일기 본문 (마크다운 형식)' },
         id: { type: 'string', format: 'uuid', description: '선택적 UUID' },
+        weather: {
+          type: 'object',
+          description:
+            'geo.gridPlaceWeather 툴에서 반환된 weather 객체(JSON). baseDate/baseTime/items가 반드시 포함되어야 합니다.',
+        },
+        created_at: {
+          type: 'string',
+          format: 'date-time',
+          description: '선택적 작성 시각 (ISO 8601)',
+        },
+        summary: {
+          type: 'string',
+          description: '챕터 요약 텍스트 (280자 이내 추천)',
+        },
+        location: { type: 'string', description: '주 무대가 되는 장소 이름' },
+        mood: { type: 'string', description: '챕터의 분위기나 감정선' },
+        major_events: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '주요 사건 목록',
+        },
+        appeared_characters: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '챕터에 등장한 인물 이름 목록',
+        },
+        emotional_tone: {
+          type: 'string',
+          description: '전반적인 감정 톤',
+        },
+        story_tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '스토리 태그 (chapter:, location:, character: 형태 등)',
+        },
+        previous_context: {
+          type: 'string',
+          description: '이전 문맥(이전 챕터 ID 등)',
+        },
+        next_context_hints: {
+          type: 'string',
+          description: '다음 전개 힌트 또는 작성 메모',
+        },
       },
       additionalProperties: true,
     },
@@ -238,20 +374,31 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       '기존 일기를 수정합니다. 특정 ID의 일기 내용을 업데이트할 때 사용하세요. content 외에도 다른 필드를 함께 수정할 수 있습니다.',
     inputSchema: {
       type: 'object',
-      required: ['id', 'content'],
+      required: ['id'],
       properties: {
         id: { type: 'string', format: 'uuid', description: '수정할 일기의 ID' },
         content: {
           type: 'string',
           description: '수정할 일기 본문 (마크다운 형식)',
         },
+        weather: {
+          type: 'object',
+          description:
+            '날씨를 갱신하려면 geo.gridPlaceWeather 툴의 weather 객체(JSON)를 전달하세요.',
+        },
       },
       additionalProperties: true,
     },
     handler: async (rawArgs: unknown) => {
       const payload = zEntriesUpdate.parse(rawArgs);
-      const { id, ...rest } = payload;
-      const body = stripUndefined(rest);
+      const { id, weather, ...rest } = payload;
+      const base = stripUndefined(rest);
+      const body: Partial<EscapeFromSeoulEntries> = { ...base };
+      if (weather) {
+        const derived = deriveWeatherFromSnapshot(weather);
+        body.weather_condition = derived.condition;
+        body.weather_temperature = derived.temperature;
+      }
       if (Object.keys(body).length === 0) {
         return { ok: true };
       }
@@ -338,19 +485,12 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     handler: async (rawArgs: unknown) => {
       const payload = zCharactersUpdate.parse(rawArgs);
       const { id, ...rest } = payload;
-      const {
-        major_events,
-        character_traits,
-        name,
-        ...others
-      } = rest;
+      const { major_events, character_traits, name, ...others } = rest;
       const normalized = stripUndefined({
         ...others,
         name: typeof name === 'string' ? name.trim() : undefined,
         major_events:
-          major_events !== undefined
-            ? toStringArray(major_events)
-            : undefined,
+          major_events !== undefined ? toStringArray(major_events) : undefined,
         character_traits:
           character_traits !== undefined
             ? toStringArray(character_traits)
@@ -368,7 +508,15 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       if (fetchError) {
         throw new Error(JSON.stringify(fetchError));
       }
-      const current = data?.[0];
+      const parsed = zEscapeFromSeoulCharacters
+        .array()
+        .safeParse(data ?? []);
+      if (!parsed.success) {
+        throw new Error(
+          `Unexpected response when loading character: ${parsed.error.message}`,
+        );
+      }
+      const current = parsed.data[0];
       if (!current) {
         throw new Error(`Character ${id} not found`);
       }
@@ -380,8 +528,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         ...restNormalized,
         id: current.id,
         name: restNormalized.name ?? current.name,
-        major_events:
-          restNormalized.major_events ?? current.major_events ?? [],
+        major_events: restNormalized.major_events ?? current.major_events ?? [],
         character_traits:
           restNormalized.character_traits ?? current.character_traits ?? [],
         last_updated: lastUpdated,

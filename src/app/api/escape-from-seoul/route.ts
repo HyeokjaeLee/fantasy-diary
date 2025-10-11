@@ -301,38 +301,18 @@ async function saveChapterToDb(
   // 1. Save entry
   const trimmedContent = content.trim();
   const summary = trimmedContent.replace(/\s+/g, ' ').slice(0, 280);
-  const weatherRecord =
+  const weatherSnapshot =
     context.weather &&
     typeof context.weather.data === 'object' &&
     context.weather.data !== null &&
     !Array.isArray(context.weather.data)
       ? (context.weather.data as Record<string, unknown>)
       : null;
-  const weatherConditionCandidates: Array<unknown> = weatherRecord
-    ? [
-        weatherRecord.condition,
-        weatherRecord.description,
-        weatherRecord.summary,
-      ]
-    : [];
-  const weatherCondition =
-    weatherConditionCandidates.find(
-      (value): value is string => typeof value === 'string' && value.length > 0,
-    ) ?? '';
-  const temperatureCandidate = weatherRecord
-    ? (weatherRecord.temperature ??
-      weatherRecord.temp ??
-      weatherRecord.feelsLike)
-    : undefined;
-  const parsedTemperature =
-    typeof temperatureCandidate === 'number'
-      ? Math.round(temperatureCandidate)
-      : typeof temperatureCandidate === 'string'
-        ? Number.parseInt(temperatureCandidate, 10)
-        : Number.NaN;
-  const weatherTemperature = Number.isFinite(parsedTemperature)
-    ? parsedTemperature
-    : 0;
+  if (!weatherSnapshot) {
+    throw new Error(
+      'Missing weather snapshot. Execute geo.gridPlaceWeather before saving the chapter.',
+    );
+  }
   const primaryLocationCandidate =
     context.draft.places[0]?.name ?? context.references.places[0]?.name ?? '';
   const primaryLocation =
@@ -359,8 +339,7 @@ async function saveChapterToDb(
     content,
     created_at: context.currentTime.toISOString(),
     summary,
-    weather_condition: weatherCondition || 'unknown',
-    weather_temperature: weatherTemperature,
+    weather: weatherSnapshot,
     location: primaryLocation || 'unknown',
     mood: 'neutral',
     major_events: [] as string[],

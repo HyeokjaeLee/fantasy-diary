@@ -117,7 +117,11 @@ export const fetchCurrentWeatherFromKma = async (options: {
     );
   }
 
-  const parsed = zKmaUltraResponse.parse(await res.json());
+  const test = await res.json();
+
+  const parsed = zKmaUltraResponse.parse(test);
+
+  console.log(test);
 
   const header = parsed.response.header;
   const body = parsed.response.body;
