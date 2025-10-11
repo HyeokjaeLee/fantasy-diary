@@ -259,11 +259,8 @@ const deriveWeatherFromSnapshot = (
       typeof summary.conditionText === 'string'
         ? summary.conditionText.trim()
         : '';
-    if (!conditionText) {
-      throw new Error(
-        'weather: missing conditionText in weather snapshot',
-      );
-    }
+    const normalizedCondition =
+      conditionText.length > 0 ? conditionText : '알 수 없는 날씨';
 
     const temperatureCandidates = [summary.temperature, summary.feelsLike];
     let temperatureValue: number | null = null;
@@ -282,20 +279,14 @@ const deriveWeatherFromSnapshot = (
       }
     }
 
-    if (temperatureValue === null) {
-      throw new Error(
-        'weather: missing temperature degrees in weather snapshot',
-      );
-    }
-
-    const roundedTemperature = Math.round(temperatureValue);
+    const roundedTemperature = Math.round(temperatureValue ?? 0);
     if (roundedTemperature < -150 || roundedTemperature > 150) {
       throw new Error(
         `weather: unreasonable temperature value (${roundedTemperature})`,
       );
     }
 
-    return { condition: conditionText, temperature: roundedTemperature };
+    return { condition: normalizedCondition, temperature: roundedTemperature };
   }
 
   if (
@@ -310,11 +301,8 @@ const deriveWeatherFromSnapshot = (
       (typeof summary?.weatherCode === 'number'
         ? `weather code ${summary.weatherCode}`
         : '알 수 없는 날씨');
-    if (!conditionText) {
-      throw new Error(
-        'weather: missing condition text in weather snapshot',
-      );
-    }
+    const normalizedCondition =
+      conditionText.length > 0 ? conditionText : '알 수 없는 날씨';
 
     const candidateValues = [
       summary?.temperature?.value,
@@ -325,20 +313,14 @@ const deriveWeatherFromSnapshot = (
         (value): value is number =>
           typeof value === 'number' && Number.isFinite(value),
       ) ?? null;
-    if (temperatureValue === null) {
-      throw new Error(
-        'weather: missing temperature value in weather snapshot',
-      );
-    }
-
-    const roundedTemperature = Math.round(temperatureValue);
+    const roundedTemperature = Math.round(temperatureValue ?? 0);
     if (roundedTemperature < -150 || roundedTemperature > 150) {
       throw new Error(
         `weather: unreasonable temperature value (${roundedTemperature})`,
       );
     }
 
-    return { condition: conditionText, temperature: roundedTemperature };
+    return { condition: normalizedCondition, temperature: roundedTemperature };
   }
 
   throw new Error('weather: unsupported snapshot format');

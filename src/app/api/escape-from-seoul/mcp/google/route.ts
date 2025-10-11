@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
 import {
-  buildPlacePhotoUrl,
   fetchPlaceDetails,
   type GooglePlace,
   type GooglePlacesSearchResponse,
@@ -19,8 +18,6 @@ const zPlaceDescribeArgs = z
     regionCode: z.string().min(2).max(10).optional(),
     pageSize: z.number().int().min(1).max(10).optional(),
     includeReviews: z.boolean().optional(),
-    photoMaxWidthPx: z.number().int().min(64).max(2048).optional(),
-    photoMaxHeightPx: z.number().int().min(64).max(2048).optional(),
   })
   .refine(
     (value) =>
@@ -31,19 +28,7 @@ const zPlaceDescribeArgs = z
     },
   );
 
-const describePlace = (
-  place: GooglePlace,
-  photoOptions: { maxWidthPx?: number; maxHeightPx?: number },
-) => {
-  const photoUrls =
-    place.photos?.map((photo) => ({
-      name: photo.name,
-      widthPx: photo.widthPx,
-      heightPx: photo.heightPx,
-      attributions: photo.authorAttributions,
-      url: photo.name ? buildPlacePhotoUrl(photo.name, photoOptions) : null,
-    })) ?? [];
-
+const describePlace = (place: GooglePlace) => {
   return {
     id: place.id ?? null,
     resourceName: place.name ?? null,
@@ -87,7 +72,6 @@ const describePlace = (
     accessibility: place.accessibilityOptions ?? null,
     utcOffsetMinutes: place.utcOffsetMinutes ?? null,
     timeZone: place.timeZone?.id ?? null,
-    photos: photoUrls.filter((photo) => photo.url !== null),
   };
 };
 
@@ -106,7 +90,6 @@ const collectReviews = (place: GooglePlace) => {
     author: {
       displayName: review.authorAttribution?.displayName ?? null,
       uri: review.authorAttribution?.uri ?? null,
-      photoUri: review.authorAttribution?.photoUri ?? null,
     },
     googleMapsUri: review.googleMapsUri ?? null,
     visitDate: review.visitDate ?? null,
@@ -117,7 +100,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
   {
     name: 'google.places.describe',
     description:
-      'Google Places API 텍스트 검색/상세 조회를 조합해 장소의 특징, 연락처, 운영 정보, 사진, 후기 등 스토리텔링에 유용한 정보를 제공합니다.',
+      'Google Places API 텍스트 검색/상세 조회를 조합해 장소의 특징, 연락처, 운영 정보, 후기 등 스토리텔링에 유용한 정보를 제공합니다.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -149,18 +132,6 @@ const tools: Array<ToolDef<unknown, unknown>> = [
           description:
             'true 면 대표 장소에 대한 최신 리뷰(최대 5개)를 포함합니다.',
         },
-        photoMaxWidthPx: {
-          type: 'integer',
-          minimum: 64,
-          maximum: 2048,
-          description: '생성할 사진 URL의 최대 가로 픽셀',
-        },
-        photoMaxHeightPx: {
-          type: 'integer',
-          minimum: 64,
-          maximum: 2048,
-          description: '생성할 사진 URL의 최대 세로 픽셀',
-        },
       },
       additionalProperties: false,
     },
@@ -169,11 +140,6 @@ const tools: Array<ToolDef<unknown, unknown>> = [
 
       const languageCode = args.languageCode ?? 'ko';
       const regionCode = args.regionCode;
-      const photoOptions = {
-        maxWidthPx: args.photoMaxWidthPx,
-        maxHeightPx: args.photoMaxHeightPx,
-      };
-
       let searchResponse: GooglePlacesSearchResponse | null = null;
       let detailPlace: GooglePlace | null = null;
 
@@ -207,12 +173,10 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       }
 
       const searchSummaries =
-        searchResponse?.places?.map((place) =>
-          describePlace(place, photoOptions),
-        ) ?? [];
+        searchResponse?.places?.map((place) => describePlace(place)) ?? [];
 
       const detailedSummary = detailPlace
-        ? describePlace(detailPlace, photoOptions)
+        ? describePlace(detailPlace)
         : null;
 
       const reviews =

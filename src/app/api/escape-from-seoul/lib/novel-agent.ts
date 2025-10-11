@@ -134,19 +134,6 @@ export class NovelWritingAgent {
     return items.length > 0 ? items : fallback;
   }
 
-  private parseGridCoordinate(value: unknown): number | null {
-    if (typeof value === 'number' && Number.isInteger(value)) {
-      return value;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number.parseInt(value, 10);
-
-      return Number.isInteger(parsed) ? parsed : null;
-    }
-
-    return null;
-  }
-
   private parseCoordinate(value: unknown): number | null {
     if (typeof value === 'number' && Number.isFinite(value)) {
       return value;

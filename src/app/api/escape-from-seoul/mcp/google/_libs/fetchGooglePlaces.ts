@@ -5,109 +5,21 @@ import { ENV } from '@/env';
 
 const PLACES_BASE_URL = 'https://places.googleapis.com/v1';
 
-const DEFAULT_SEARCH_FIELD_MASK = [
-  'places.id',
-  'places.displayName.text',
-  'places.displayName.languageCode',
-  'places.formattedAddress',
-  'places.shortFormattedAddress',
-  'places.location.latitude',
-  'places.location.longitude',
-  'places.types',
-  'places.primaryType',
-  'places.primaryTypeDisplayName.text',
-  'places.primaryTypeDisplayName.languageCode',
-  'places.rating',
-  'places.userRatingCount',
-  'places.priceLevel',
-  'places.businessStatus',
-  'places.googleMapsUri',
-  'places.websiteUri',
-  'places.editorialSummary.text',
-  'places.editorialSummary.languageCode',
-  'places.currentOpeningHours.openNow',
-  'places.currentOpeningHours.weekdayDescriptions',
-  'places.regularOpeningHours.weekdayDescriptions',
-  'places.nationalPhoneNumber',
-  'places.internationalPhoneNumber',
-  'places.accessibilityOptions.wheelchairAccessibleParking',
-  'places.accessibilityOptions.wheelchairAccessibleEntrance',
-  'places.accessibilityOptions.wheelchairAccessibleRestroom',
-  'places.accessibilityOptions.wheelchairAccessibleSeating',
-  'places.photos.name',
-  'places.photos.widthPx',
-  'places.photos.heightPx',
-  'places.photos.authorAttributions.displayName',
-  'places.photos.authorAttributions.uri',
-  'places.photos.authorAttributions.photoUri',
-  'places.generativeSummary.overview.text',
-  'places.generativeSummary.overview.languageCode',
-  'places.generativeSummary.overviewFlagContentUri',
-  'places.generativeSummary.disclosureText.text',
-  'places.generativeSummary.disclosureText.languageCode',
-  'places.utcOffsetMinutes',
-  'places.timeZone.id',
-  'places.timeZone.version',
-].join(',');
+const DEFAULT_DETAILS_FIELD_MASK_LIST = [
+  'id', // 여러 호출에서 재사용하는 고유 식별자
+  'displayName.text', // 검색과 동일한 읽기 쉬운 이름
+  'formattedAddress', // 묘사에 쓰이는 표준 주소
+  'location.latitude', // 지리 맥락을 위한 정확한 위도
+  'location.longitude', // 지리 맥락을 위한 정확한 경도
+  'primaryTypeDisplayName.text', // 설명에 쓰기 좋은 카테고리 텍스트
+  'editorialSummary.text', // 공식 요약 문구
+  'generativeSummary.overview.text', // AI가 작성한 풍부한 설명
+];
 
-const DEFAULT_DETAILS_FIELD_MASK = [
-  'id',
-  'displayName.text',
-  'displayName.languageCode',
-  'formattedAddress',
-  'shortFormattedAddress',
-  'location.latitude',
-  'location.longitude',
-  'types',
-  'primaryType',
-  'primaryTypeDisplayName.text',
-  'primaryTypeDisplayName.languageCode',
-  'rating',
-  'userRatingCount',
-  'priceLevel',
-  'businessStatus',
-  'googleMapsUri',
-  'websiteUri',
-  'editorialSummary.text',
-  'editorialSummary.languageCode',
-  'currentOpeningHours.openNow',
-  'currentOpeningHours.weekdayDescriptions',
-  'regularOpeningHours.weekdayDescriptions',
-  'nationalPhoneNumber',
-  'internationalPhoneNumber',
-  'accessibilityOptions.wheelchairAccessibleParking',
-  'accessibilityOptions.wheelchairAccessibleEntrance',
-  'accessibilityOptions.wheelchairAccessibleRestroom',
-  'accessibilityOptions.wheelchairAccessibleSeating',
-  'photos.name',
-  'photos.widthPx',
-  'photos.heightPx',
-  'photos.authorAttributions.displayName',
-  'photos.authorAttributions.uri',
-  'photos.authorAttributions.photoUri',
-  'generativeSummary.overview.text',
-  'generativeSummary.overview.languageCode',
-  'generativeSummary.overviewFlagContentUri',
-  'generativeSummary.disclosureText.text',
-  'generativeSummary.disclosureText.languageCode',
-  'utcOffsetMinutes',
-  'timeZone.id',
-  'timeZone.version',
-  'reviews.name',
-  'reviews.rating',
-  'reviews.text.text',
-  'reviews.text.languageCode',
-  'reviews.originalText.text',
-  'reviews.originalText.languageCode',
-  'reviews.publishTime',
-  'reviews.relativePublishTimeDescription',
-  'reviews.authorAttribution.displayName',
-  'reviews.authorAttribution.uri',
-  'reviews.authorAttribution.photoUri',
-  'reviews.googleMapsUri',
-  'reviews.flagContentUri',
-  'reviews.visitDate',
-].join(',');
+const DEFAULT_DETAILS_FIELD_MASK = DEFAULT_DETAILS_FIELD_MASK_LIST.join(',');
+const DEFAULT_SEARCH_FIELD_MASK = DEFAULT_DETAILS_FIELD_MASK_LIST.map(
+  (fieldMask) => `places.${fieldMask}`,
+);
 
 const zLocalizedText = z
   .object({
@@ -128,17 +40,6 @@ const zAuthorAttribution = z
   .object({
     displayName: z.string().optional(),
     uri: z.string().optional(),
-    photoUri: z.string().optional(),
-  })
-  .partial()
-  .passthrough();
-
-const zPhoto = z
-  .object({
-    name: z.string(),
-    widthPx: z.number().optional(),
-    heightPx: z.number().optional(),
-    authorAttributions: z.array(zAuthorAttribution).optional(),
   })
   .partial()
   .passthrough();
@@ -231,7 +132,6 @@ const zPlace = z
     nationalPhoneNumber: z.string().optional(),
     internationalPhoneNumber: z.string().optional(),
     accessibilityOptions: zAccessibilityOptions.optional(),
-    photos: z.array(zPhoto).optional(),
     generativeSummary: z
       .object({
         overview: zLocalizedText.optional(),
@@ -268,11 +168,26 @@ interface SearchPlacesOptions {
   languageCode?: string;
   regionCode?: string;
   pageSize?: number;
-  fieldMask?: string;
+  fieldMask?: string | string[];
   openNow?: boolean;
   minRating?: number;
   rankPreference?: 'DISTANCE' | 'RELEVANCE';
   includedType?: string;
+}
+
+interface SearchNearbyOptions {
+  center: {
+    latitude: number;
+    longitude: number;
+  };
+  radiusMeters: number;
+  includedTypes?: string[];
+  excludedTypes?: string[];
+  maxResultCount?: number;
+  languageCode?: string;
+  regionCode?: string;
+  rankPreference?: 'DISTANCE' | 'POPULARITY';
+  fieldMask?: string | string[];
 }
 
 export const searchPlacesByText = async (options: SearchPlacesOptions) => {
@@ -287,6 +202,10 @@ export const searchPlacesByText = async (options: SearchPlacesOptions) => {
     rankPreference,
     includedType,
   } = options;
+
+  const serializedFieldMask = Array.isArray(fieldMask)
+    ? fieldMask.join(',')
+    : fieldMask;
 
   const payload: Record<string, unknown> = {
     textQuery,
@@ -307,7 +226,7 @@ export const searchPlacesByText = async (options: SearchPlacesOptions) => {
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'X-Goog-Api-Key': ENV.NEXT_GOOGLE_MAP_API_KEY,
-        'X-Goog-FieldMask': fieldMask,
+        'X-Goog-FieldMask': serializedFieldMask,
       },
       json: payload,
     });
@@ -339,7 +258,7 @@ interface GetPlaceDetailsOptions {
   placeId: string;
   languageCode?: string;
   regionCode?: string;
-  fieldMask?: string;
+  fieldMask?: string | string[];
 }
 
 export const fetchPlaceDetails = async (options: GetPlaceDetailsOptions) => {
@@ -349,6 +268,10 @@ export const fetchPlaceDetails = async (options: GetPlaceDetailsOptions) => {
     regionCode,
     fieldMask = DEFAULT_DETAILS_FIELD_MASK,
   } = options;
+
+  const serializedFieldMask = Array.isArray(fieldMask)
+    ? fieldMask.join(',')
+    : fieldMask;
 
   const searchParams = new URLSearchParams();
   if (languageCode) searchParams.set('languageCode', languageCode);
@@ -362,7 +285,7 @@ export const fetchPlaceDetails = async (options: GetPlaceDetailsOptions) => {
         headers: {
           Accept: 'application/json',
           'X-Goog-Api-Key': ENV.NEXT_GOOGLE_MAP_API_KEY,
-          'X-Goog-FieldMask': fieldMask,
+          'X-Goog-FieldMask': serializedFieldMask,
         },
       },
     );
@@ -390,21 +313,76 @@ export const fetchPlaceDetails = async (options: GetPlaceDetailsOptions) => {
   return zPlace.parse(json);
 };
 
-export const buildPlacePhotoUrl = (
-  photoName: string,
-  options?: { maxHeightPx?: number; maxWidthPx?: number },
-) => {
-  const params = new URLSearchParams({
-    key: ENV.NEXT_GOOGLE_MAP_API_KEY,
-  });
+export const searchPlacesNearby = async (options: SearchNearbyOptions) => {
+  const {
+    center,
+    radiusMeters,
+    includedTypes,
+    excludedTypes,
+    maxResultCount,
+    languageCode,
+    regionCode,
+    rankPreference,
+    fieldMask = DEFAULT_SEARCH_FIELD_MASK,
+  } = options;
 
-  if (options?.maxHeightPx) {
-    params.set('maxHeightPx', options.maxHeightPx.toString());
+  const serializedFieldMask = Array.isArray(fieldMask)
+    ? fieldMask.join(',')
+    : fieldMask;
+
+  const payload: Record<string, unknown> = {
+    locationRestriction: {
+      circle: {
+        center: {
+          latitude: center.latitude,
+          longitude: center.longitude,
+        },
+        radius: Math.min(Math.max(radiusMeters, 1), 50000),
+      },
+    },
+  };
+
+  if (includedTypes?.length) payload.includedTypes = includedTypes;
+  if (excludedTypes?.length) payload.excludedTypes = excludedTypes;
+  if (languageCode) payload.languageCode = languageCode;
+  if (regionCode) payload.regionCode = regionCode;
+  if (rankPreference) payload.rankPreference = rankPreference;
+
+  if (maxResultCount) {
+    payload.maxResultCount = Math.min(Math.max(maxResultCount, 1), 20);
   }
 
-  if (options?.maxWidthPx) {
-    params.set('maxWidthPx', options.maxWidthPx.toString());
+  let response: Response;
+  try {
+    response = await ky.post(`${PLACES_BASE_URL}/places:searchNearby`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'X-Goog-Api-Key': ENV.NEXT_GOOGLE_MAP_API_KEY,
+        'X-Goog-FieldMask': serializedFieldMask,
+      },
+      json: payload,
+    });
+  } catch (error) {
+    if (error instanceof HTTPError) {
+      const message = `Google Places 주변검색 실패: HTTP ${error.response.status}`;
+      throw new Error(message);
+    }
+
+    if (error instanceof Error) throw error;
+
+    throw new Error(`Google Places 주변검색 실패: ${String(error)}`);
   }
 
-  return `${PLACES_BASE_URL}/${photoName}/media?${params.toString()}`;
+  const contentType = response.headers.get('content-type') ?? '';
+  if (!contentType.toLowerCase().includes('json')) {
+    const preview = (await response.text()).slice(0, 300);
+    throw new Error(
+      `Google Places 주변검색 응답이 JSON이 아님 (content-type: ${contentType}): ${preview}`,
+    );
+  }
+
+  const json = await response.json();
+
+  return zSearchTextResponse.parse(json);
 };
