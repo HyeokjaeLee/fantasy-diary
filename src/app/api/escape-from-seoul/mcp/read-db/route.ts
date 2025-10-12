@@ -1,7 +1,7 @@
 import { client } from '@supabase-api/client.gen';
 import {
   getEscapeFromSeoulCharacters,
-  getEscapeFromSeoulEntries,
+  getEscapeFromSeoulEpisodes,
   getEscapeFromSeoulPlaces,
 } from '@supabase-api/sdk.gen';
 import { z } from 'zod';
@@ -29,23 +29,17 @@ const configureSupabaseRest = () => {
 const zListArgs = z.object({
   limit: z.number().int().min(1).max(100).optional(),
 });
-const zId = z.object({ id: z.string().uuid() });
+const zEpisodeId = z.object({ id: z.string().min(1) });
 
-const zNameLookup = z
-  .object({
-    id: z.string().uuid().optional(),
-    name: z.string().min(1).optional(),
-  })
-  .refine(
-    (value) => !!value.id !== !!value.name,
-    'id 혹은 name 중 하나만 제공해야 합니다.',
-  );
+const zNameLookup = z.object({
+  name: z.string().min(1),
+});
 
 const tools = [
   {
-    name: 'entries.list',
+    name: 'episodes.list',
     description:
-      '작성된 일기 목록을 최신순(created_at 내림차순)으로 조회합니다. 이전 사건의 흐름, 등장한 캐릭터, 방문한 장소 등 스토리 연속성을 확인할 때 사용하세요.',
+      '작성된 에피소드 목록을 최신순(ID 내림차순)으로 조회합니다. 이전 사건의 흐름, 등장한 캐릭터, 방문한 장소 등 스토리 연속성을 확인할 때 사용하세요.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -56,9 +50,9 @@ const tools = [
     handler: async (rawArgs: unknown) => {
       const { limit = 50 } = zListArgs.parse(rawArgs ?? {});
       configureSupabaseRest();
-      const { data, error } = await getEscapeFromSeoulEntries({
+      const { data, error } = await getEscapeFromSeoulEpisodes({
         headers: { Prefer: 'count=none' },
-        query: { order: 'created_at.desc', limit: String(limit) },
+        query: { order: 'id.desc', limit: String(limit) },
       });
       if (error) throw new Error(String(error));
 
@@ -66,21 +60,24 @@ const tools = [
     },
   },
   {
-    name: 'entries.get',
+    name: 'episodes.get',
     description:
-      '특정 ID의 일기 내용을 상세 조회합니다. 이전 에피소드를 정확히 인용하거나 세부 묘사를 참조할 때 사용하세요.',
+      '특정 ID의 에피소드 내용을 상세 조회합니다. 이전 에피소드를 정확히 인용하거나 세부 묘사를 참조할 때 사용하세요.',
     inputSchema: {
       type: 'object',
       required: ['id'],
       properties: {
-        id: { type: 'string', format: 'uuid' },
+        id: {
+          type: 'string',
+          description: '조회할 에피소드 ID',
+        },
       },
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { id } = zId.parse(rawArgs ?? {});
+      const { id } = zEpisodeId.parse(rawArgs ?? {});
       configureSupabaseRest();
-      const { data, error } = await getEscapeFromSeoulEntries({
+      const { data, error } = await getEscapeFromSeoulEpisodes({
         headers: { Prefer: 'count=none' },
         query: { id: `eq.${id}`, limit: '1' },
       });
@@ -115,23 +112,21 @@ const tools = [
   {
     name: 'characters.get',
     description:
-      '특정 캐릭터의 상세 정보를 조회합니다. ID 또는 이름으로 검색할 수 있으며, 인물의 성격, 배경, 동기 등을 정확히 반영한 대사나 행동을 묘사할 때 사용하세요.',
+      '특정 캐릭터의 상세 정보를 조회합니다. 이름으로 검색할 수 있으며, 인물의 성격, 배경, 동기 등을 정확히 반영한 대사나 행동을 묘사할 때 사용하세요.',
     inputSchema: {
       type: 'object',
+      required: ['name'],
       properties: {
-        id: { type: 'string', format: 'uuid' },
         name: { type: 'string', minLength: 1 },
       },
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { id, name } = zNameLookup.parse(rawArgs ?? {});
+      const { name } = zNameLookup.parse(rawArgs ?? {});
       configureSupabaseRest();
       const { data, error } = await getEscapeFromSeoulCharacters({
         headers: { Prefer: 'count=none' },
-        query: id
-          ? { id: `eq.${id}`, limit: '1' }
-          : { name: `eq.${name}`, limit: '1' },
+        query: { name: `eq.${name}`, limit: '1' },
       });
       if (error) throw new Error(String(error));
 
@@ -164,23 +159,21 @@ const tools = [
   {
     name: 'places.get',
     description:
-      '특정 장소의 상세 정보를 조회합니다. ID 또는 이름으로 검색할 수 있으며, 장소의 분위기, 구조, 특징 등을 정확히 묘사할 때 사용하세요.',
+      '특정 장소의 상세 정보를 조회합니다. 이름으로 검색할 수 있으며, 장소의 분위기, 구조, 특징 등을 정확히 묘사할 때 사용하세요.',
     inputSchema: {
       type: 'object',
+      required: ['name'],
       properties: {
-        id: { type: 'string', format: 'uuid' },
         name: { type: 'string', minLength: 1 },
       },
       additionalProperties: false,
     },
     handler: async (rawArgs: unknown) => {
-      const { id, name } = zNameLookup.parse(rawArgs ?? {});
+      const { name } = zNameLookup.parse(rawArgs ?? {});
       configureSupabaseRest();
       const { data, error } = await getEscapeFromSeoulPlaces({
         headers: { Prefer: 'count=none' },
-        query: id
-          ? { id: `eq.${id}`, limit: '1' }
-          : { name: `eq.${name}`, limit: '1' },
+        query: { name: `eq.${name}`, limit: '1' },
       });
       if (error) throw new Error(String(error));
 

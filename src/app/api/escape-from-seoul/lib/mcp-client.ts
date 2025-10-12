@@ -113,7 +113,7 @@ export async function executeMcpTool(
     endpoint = 'google';
   } else if (category === 'geo') {
     endpoint = 'geo';
-  } else if (['entries', 'characters', 'places'].includes(category)) {
+  } else if (['episodes', 'characters', 'places'].includes(category)) {
     // action에 따라 read-db vs write-db 결정
     const action = mcpToolName.split('.')[1];
     const isWrite = ['create', 'update', 'delete'].includes(action);

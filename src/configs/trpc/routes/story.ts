@@ -1,5 +1,5 @@
 import { client } from '@supabase-api/client.gen';
-import { getEscapeFromSeoulEntries } from '@supabase-api/sdk.gen';
+import { getEscapeFromSeoulEpisodes } from '@supabase-api/sdk.gen';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -37,9 +37,9 @@ export const story = router({
     .query(async ({ input }) => {
       configureSupabaseRest();
       const limit = input?.limit ?? 10;
-      const { data, error } = await getEscapeFromSeoulEntries({
+      const { data, error } = await getEscapeFromSeoulEpisodes({
         headers: { Prefer: 'count=none' },
-        query: { order: 'created_at.desc', limit: String(limit) },
+        query: { order: 'id.desc', limit: String(limit) },
       });
       if (error) {
         throw new TRPCError({

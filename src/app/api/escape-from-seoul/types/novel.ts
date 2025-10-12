@@ -1,14 +1,22 @@
 import type {
   EscapeFromSeoulCharacters,
-  EscapeFromSeoulEntries,
+  EscapeFromSeoulEpisodes,
   EscapeFromSeoulPlaces,
 } from '@supabase-api/types.gen';
+
+export interface CharacterDraft extends Partial<EscapeFromSeoulCharacters> {
+  externalId?: string;
+}
+
+export interface PlaceDraft extends Partial<EscapeFromSeoulPlaces> {
+  externalId?: string;
+}
 
 // 챕터 작성 중 상태 관리
 export interface ChapterContext {
   chapterId: string;
   currentTime: Date;
-  previousChapter?: EscapeFromSeoulEntries;
+  previousChapter?: EscapeFromSeoulEpisodes;
   weather?: {
     location:
       | { latitude: number; longitude: number }
@@ -24,8 +32,8 @@ export interface ChapterContext {
   draft: {
     prewriting?: string;
     content?: string;
-    characters: Partial<EscapeFromSeoulCharacters>[];
-    places: Partial<EscapeFromSeoulPlaces>[];
+    characters: CharacterDraft[];
+    places: PlaceDraft[];
   };
 }
 

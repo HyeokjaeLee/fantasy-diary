@@ -1,5 +1,6 @@
 import type {
   EscapeFromSeoulCharacters,
+  EscapeFromSeoulEpisodes,
   EscapeFromSeoulPlaces,
 } from '@supabase-api/types.gen';
 import type { NextRequest } from 'next/server';
@@ -11,6 +12,8 @@ import { getMcpFunctionDeclarations } from './lib/mcp-client';
 import { NovelWritingAgent } from './lib/novel-agent';
 import type {
   ChapterContext,
+  CharacterDraft,
+  PlaceDraft,
   WriteChapterRequest,
   WriteChapterResponse,
 } from './types/novel';
@@ -149,7 +152,9 @@ function formatChapterId(date: Date): string {
 }
 
 // Helper: Fetch previous chapter
-async function getPreviousChapter() {
+async function getPreviousChapter(): Promise<
+  EscapeFromSeoulEpisodes | undefined
+> {
   try {
     const baseUrl = ENV.NEXT_PUBLIC_URL;
     const url = `${baseUrl}/api/escape-from-seoul/mcp/read-db`;
@@ -162,7 +167,7 @@ async function getPreviousChapter() {
         id: Date.now(),
         method: 'tools/call',
         params: {
-          name: 'entries.list',
+          name: 'episodes.list',
           arguments: { limit: 1 },
         },
       }),
@@ -185,13 +190,13 @@ async function getPreviousChapter() {
 
       return undefined;
     }
-    const entriesText = result.result?.content?.[0]?.text;
+    const episodesText = result.result?.content?.[0]?.text;
 
-    if (!entriesText) return undefined;
+    if (!episodesText) return undefined;
 
-    const entries = JSON.parse(entriesText);
+    const episodes = JSON.parse(episodesText) as EscapeFromSeoulEpisodes[];
 
-    return entries[0] || undefined;
+    return Array.isArray(episodes) ? episodes[0] || undefined : undefined;
   } catch (error) {
     console.error('Error fetching previous chapter:', error);
 
@@ -298,58 +303,52 @@ async function saveChapterToDb(
   const normalizeName = (value: unknown) =>
     typeof value === 'string' ? value.trim() : undefined;
 
-  // 1. Save entry
+  // 1. Save episode
   const trimmedContent = content.trim();
-  const summary = trimmedContent.replace(/\s+/g, ' ').slice(0, 280);
-  const weatherSnapshot =
-    context.weather &&
-    typeof context.weather.data === 'object' &&
-    context.weather.data !== null &&
-    !Array.isArray(context.weather.data)
-      ? (context.weather.data as Record<string, unknown>)
-      : null;
-  if (!weatherSnapshot) {
-    throw new Error(
-      'Missing weather snapshot. Execute weather.openMeteo.lookup before saving the chapter.',
-    );
+  if (trimmedContent.length === 0) {
+    throw new Error('Cannot save empty chapter content');
   }
-  const primaryLocationCandidate =
-    context.draft.places[0]?.name ?? context.references.places[0]?.name ?? '';
-  const primaryLocation =
-    typeof primaryLocationCandidate === 'string'
-      ? primaryLocationCandidate
-      : '';
-  const appearedCharacters = context.draft.characters
-    .map((character) =>
-      typeof character.name === 'string' ? character.name.trim() : '',
-    )
-    .filter((name): name is string => name.length > 0);
-  const storyTagsSet = new Set<string>([`chapter:${id}`]);
-  if (primaryLocation) {
-    storyTagsSet.add(`location:${primaryLocation}`);
+  const summaryText = trimmedContent.replace(/\s+/g, ' ').slice(0, 280);
+  const characterNames = Array.from(
+    new Set(
+      context.draft.characters
+        .map((character) => normalizeName(character.name))
+        .filter((name): name is string => !!name),
+    ),
+  );
+  if (characterNames.length === 0) {
+    debug('No characters tracked in draft; falling back to reference snapshot');
+    for (const character of context.references.characters) {
+      const resolved = normalizeName(character.name);
+      if (resolved) {
+        characterNames.push(resolved);
+      }
+    }
   }
-  for (const name of appearedCharacters) {
-    storyTagsSet.add(`character:${name}`);
+  const placeNames = Array.from(
+    new Set(
+      context.draft.places
+        .map((place) => normalizeName(place.name))
+        .filter((name): name is string => !!name),
+    ),
+  );
+  if (placeNames.length === 0) {
+    debug('No places tracked in draft; falling back to reference snapshot');
+    for (const place of context.references.places) {
+      const resolved = normalizeName(place.name);
+      if (resolved) {
+        placeNames.push(resolved);
+      }
+    }
   }
-  const nextContext =
-    typeof context.draft.prewriting === 'string'
-      ? context.draft.prewriting.replace(/\s+/g, ' ').slice(0, 280)
-      : '';
-  const entryArgs = {
+  const episodeArgs = {
+    id,
     content,
-    created_at: context.currentTime.toISOString(),
-    summary,
-    weather: weatherSnapshot,
-    location: primaryLocation || 'unknown',
-    mood: 'neutral',
-    major_events: [] as string[],
-    appeared_characters: appearedCharacters,
-    emotional_tone: 'neutral',
-    story_tags: Array.from(storyTagsSet),
-    previous_context: context.previousChapter?.id ?? '',
-    next_context_hints: nextContext,
+    summary: summaryText.length > 0 ? summaryText : undefined,
+    characters: characterNames,
+    places: placeNames,
   };
-  await callWriteTool('entries.create', entryArgs);
+  await callWriteTool('episodes.create', episodeArgs);
 
   // 2. Load latest reference data for consistency checks
   const charactersSnapshot = normalizeArray<EscapeFromSeoulCharacters>(
@@ -361,245 +360,157 @@ async function saveChapterToDb(
   context.references.characters = charactersSnapshot;
   context.references.places = placesSnapshot;
 
-  const characterById = new Map<string, EscapeFromSeoulCharacters>();
+  const characterColumns: Array<keyof EscapeFromSeoulCharacters> = [
+    'name',
+    'personality',
+    'background',
+    'appearance',
+    'current_place',
+    'relationships',
+    'major_events',
+    'character_traits',
+    'current_status',
+    'updated_at',
+    'last_mentioned_episode_id',
+  ];
+  const placeColumns: Array<keyof EscapeFromSeoulPlaces> = [
+    'name',
+    'current_situation',
+    'latitude',
+    'longitude',
+    'last_weather_condition',
+    'last_weather_weather_condition',
+    'updated_at',
+    'last_mentioned_episode_id',
+  ];
+
   const characterByName = new Map<string, EscapeFromSeoulCharacters>();
   for (const character of charactersSnapshot) {
-    if (character.id) characterById.set(character.id, character);
-    if (character.name) characterByName.set(character.name, character);
+    const key = normalizeName(character.name);
+    if (key) {
+      characterByName.set(key, character);
+    }
   }
 
-  const placeById = new Map<string, EscapeFromSeoulPlaces>();
   const placeByName = new Map<string, EscapeFromSeoulPlaces>();
   for (const place of placesSnapshot) {
-    if (place.id) placeById.set(place.id, place);
-    if (place.name) placeByName.set(place.name, place);
+    const key = normalizeName(place.name);
+    if (key) {
+      placeByName.set(key, place);
+    }
   }
 
-  const fetchCharacter = async (idOrName: {
-    id?: string;
-    name?: string;
-  }): Promise<EscapeFromSeoulCharacters | undefined> => {
-    const lookupId = idOrName.id;
-    const lookupName = idOrName.name;
-
-    if (lookupId && characterById.has(lookupId)) {
-      return characterById.get(lookupId);
+  const setCharacterCache = (record: EscapeFromSeoulCharacters) => {
+    const key = normalizeName(record.name);
+    if (key) {
+      characterByName.set(key, record);
     }
-    if (lookupName && characterByName.has(lookupName)) {
-      return characterByName.get(lookupName);
-    }
-
-    if (lookupId) {
-      const result = toRecord(
-        await callReadTool('characters.get', { id: lookupId }),
-      );
-      if (
-        result &&
-        typeof result.id === 'string' &&
-        typeof result.name === 'string'
-      ) {
-        const cast = result as EscapeFromSeoulCharacters;
-        characterById.set(cast.id, cast);
-        characterByName.set(cast.name, cast);
-
-        return cast;
-      }
-    }
-
-    if (lookupName) {
-      const result = toRecord(
-        await callReadTool('characters.get', { name: lookupName }),
-      );
-      if (
-        result &&
-        typeof result.id === 'string' &&
-        typeof result.name === 'string'
-      ) {
-        const cast = result as EscapeFromSeoulCharacters;
-        characterById.set(cast.id, cast);
-        characterByName.set(cast.name, cast);
-
-        return cast;
-      }
-    }
-
-    return undefined;
   };
 
-  const fetchPlace = async (idOrName: {
-    id?: string;
-    name?: string;
-  }): Promise<EscapeFromSeoulPlaces | undefined> => {
-    const lookupId = idOrName.id;
-    const lookupName = idOrName.name;
-
-    if (lookupId && placeById.has(lookupId)) {
-      return placeById.get(lookupId);
+  const setPlaceCache = (record: EscapeFromSeoulPlaces) => {
+    const key = normalizeName(record.name);
+    if (key) {
+      placeByName.set(key, record);
     }
-    if (lookupName && placeByName.has(lookupName)) {
-      return placeByName.get(lookupName);
-    }
-
-    if (lookupId) {
-      const result = toRecord(
-        await callReadTool('places.get', { id: lookupId }),
-      );
-      if (
-        result &&
-        typeof result.id === 'string' &&
-        typeof result.name === 'string'
-      ) {
-        const cast = result as EscapeFromSeoulPlaces;
-        placeById.set(cast.id, cast);
-        placeByName.set(cast.name, cast);
-
-        return cast;
-      }
-    }
-
-    if (lookupName) {
-      const result = toRecord(
-        await callReadTool('places.get', { name: lookupName }),
-      );
-      if (
-        result &&
-        typeof result.id === 'string' &&
-        typeof result.name === 'string'
-      ) {
-        const cast = result as EscapeFromSeoulPlaces;
-        placeById.set(cast.id, cast);
-        placeByName.set(cast.name, cast);
-
-        return cast;
-      }
-    }
-
-    return undefined;
   };
 
-  const upsertCharacter = async (char: Partial<EscapeFromSeoulCharacters>) => {
-    const trimmedName = normalizeName(char.name);
-    if (trimmedName) {
-      char.name = trimmedName;
+  const fetchCharacter = async (
+    name: string,
+  ): Promise<EscapeFromSeoulCharacters | undefined> => {
+    const normalized = normalizeName(name);
+    if (!normalized) {
+      return undefined;
     }
-    const lookupId = typeof char.id === 'string' ? char.id : undefined;
-    const existing =
-      (await fetchCharacter({
-        id: lookupId ?? undefined,
-        name: trimmedName,
-      })) ?? undefined;
-
-    if (!existing) {
-      if (!trimmedName) {
-        debug('Skip characters.create because name is missing');
-
-        return;
-      }
-      const payload: Record<string, unknown> = {
-        ...char,
-        name: trimmedName,
-      };
-      const created = await callWriteTool('characters.create', payload);
-      const recordArray = normalizeArray<Record<string, unknown>>(created);
-      const createdRecord =
-        recordArray[0] ?? toRecord(created ?? null) ?? undefined;
-      if (createdRecord && typeof createdRecord.id === 'string') {
-        const cast = createdRecord as EscapeFromSeoulCharacters;
-        characterById.set(cast.id, cast);
-        if (cast.name) {
-          characterByName.set(cast.name, cast);
-        }
-        if (
-          !context.references.characters.some((item) => item.id === cast.id)
-        ) {
-          context.references.characters.push(cast);
-        }
-        char.id = cast.id;
-      }
-
-      return;
+    if (characterByName.has(normalized)) {
+      return characterByName.get(normalized);
     }
-
-    char.id = existing.id;
-    const diff: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(char)) {
-      if (value === undefined) continue;
-      if (valuesDiffer((existing as Record<string, unknown>)[key], value)) {
-        diff[key] = value;
-      }
-    }
-
-    if (Object.keys(diff).length === 0) {
-      return;
-    }
-
-    const payload: Record<string, unknown> = {
-      id: existing.id,
-      name: (diff.name as string | undefined) ?? existing.name,
-      ...diff,
-    };
-    await callWriteTool('characters.update', payload);
-    const merged = {
-      ...existing,
-      ...payload,
-    } as EscapeFromSeoulCharacters;
-    characterById.set(merged.id, merged);
-    if (merged.name) {
-      characterByName.set(merged.name, merged);
-    }
-    const refIndex = context.references.characters.findIndex(
-      (item) => item.id === merged.id,
+    const result = toRecord(
+      await callReadTool('characters.get', { name: normalized }),
     );
-    if (refIndex >= 0) {
-      context.references.characters[refIndex] = merged;
+    if (result && typeof result.name === 'string') {
+      const cast = result as EscapeFromSeoulCharacters;
+      setCharacterCache(cast);
+
+      return cast;
     }
+
+    return undefined;
   };
 
-  const upsertPlace = async (place: Partial<EscapeFromSeoulPlaces>) => {
-    const trimmedName = normalizeName(place.name);
-    if (trimmedName) {
-      place.name = trimmedName;
+  const fetchPlace = async (
+    name: string,
+  ): Promise<EscapeFromSeoulPlaces | undefined> => {
+    const normalized = normalizeName(name);
+    if (!normalized) {
+      return undefined;
     }
-    const lookupId = typeof place.id === 'string' ? place.id : undefined;
-    const existing =
-      (await fetchPlace({ id: lookupId ?? undefined, name: trimmedName })) ??
-      undefined;
+    if (placeByName.has(normalized)) {
+      return placeByName.get(normalized);
+    }
+    const result = toRecord(
+      await callReadTool('places.get', { name: normalized }),
+    );
+    if (result && typeof result.name === 'string') {
+      const cast = result as EscapeFromSeoulPlaces;
+      setPlaceCache(cast);
+
+      return cast;
+    }
+
+    return undefined;
+  };
+
+  const upsertPlace = async (place: PlaceDraft) => {
+    const trimmedName = normalizeName(place.name);
+    if (!trimmedName) {
+      debug('Skip places.create because name is missing');
+
+      return;
+    }
+
+    const payload: Record<string, unknown> = { name: trimmedName };
+    for (const key of placeColumns) {
+      if (key === 'name') continue;
+      const value = place[key];
+      if (value !== undefined) {
+        payload[key] = value as never;
+      }
+    }
+    payload.updated_at =
+      (payload.updated_at as string | undefined) ??
+      context.currentTime.toISOString();
+    payload.last_mentioned_episode_id =
+      (payload.last_mentioned_episode_id as string | undefined) ?? id;
+
+    const existing = await fetchPlace(trimmedName);
 
     if (!existing) {
-      if (!trimmedName) {
-        debug('Skip places.create because name is missing');
-
-        return;
-      }
-      const payload: Record<string, unknown> = {
-        ...place,
-        name: trimmedName,
-      };
       const created = await callWriteTool('places.create', payload);
       const recordArray = normalizeArray<Record<string, unknown>>(created);
       const createdRecord =
         recordArray[0] ?? toRecord(created ?? null) ?? undefined;
-      if (createdRecord && typeof createdRecord.id === 'string') {
+      if (createdRecord && typeof createdRecord.name === 'string') {
         const cast = createdRecord as EscapeFromSeoulPlaces;
-        placeById.set(cast.id, cast);
-        if (cast.name) {
-          placeByName.set(cast.name, cast);
-        }
-        if (!context.references.places.some((item) => item.id === cast.id)) {
+        setPlaceCache(cast);
+        if (
+          !context.references.places.some(
+            (item) => normalizeName(item.name) === trimmedName,
+          )
+        ) {
           context.references.places.push(cast);
         }
-        place.id = cast.id;
       }
 
       return;
     }
 
-    place.id = existing.id;
     const diff: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(place)) {
-      if (value === undefined) continue;
-      if (valuesDiffer((existing as Record<string, unknown>)[key], value)) {
-        diff[key] = value;
+    for (const key of placeColumns) {
+      if (key === 'name') continue;
+      const nextValue = payload[key];
+      if (nextValue === undefined) continue;
+      if (valuesDiffer((existing as Record<string, unknown>)[key], nextValue)) {
+        diff[key] = nextValue;
       }
     }
 
@@ -607,37 +518,126 @@ async function saveChapterToDb(
       return;
     }
 
-    const payload: Record<string, unknown> = {
-      id: existing.id,
-      name: (diff.name as string | undefined) ?? existing.name,
+    const updatePayload = {
+      name: trimmedName,
       ...diff,
     };
-    await callWriteTool('places.update', payload);
+    await callWriteTool('places.update', updatePayload);
     const merged = {
       ...existing,
-      ...payload,
+      ...updatePayload,
     } as EscapeFromSeoulPlaces;
-    placeById.set(merged.id, merged);
-    if (merged.name) {
-      placeByName.set(merged.name, merged);
-    }
+    setPlaceCache(merged);
     const refIndex = context.references.places.findIndex(
-      (item) => item.id === merged.id,
+      (item) => normalizeName(item.name) === trimmedName,
     );
     if (refIndex >= 0) {
       context.references.places[refIndex] = merged;
+    } else {
+      context.references.places.push(merged);
     }
   };
 
-  // 3. Sync characters
-  for (const char of context.draft.characters) {
-    if (!char.name && !char.id) continue;
-    await upsertCharacter(char);
+  const upsertCharacter = async (char: CharacterDraft) => {
+    const trimmedName = normalizeName(char.name);
+    if (!trimmedName) {
+      debug('Skip characters.create because name is missing');
+
+      return;
+    }
+
+    const existing = await fetchCharacter(trimmedName);
+    const payload: Record<string, unknown> = { name: trimmedName };
+    for (const key of characterColumns) {
+      if (key === 'name') continue;
+      const value = char[key];
+      if (value !== undefined) {
+        payload[key] = value as never;
+      }
+    }
+    payload.updated_at =
+      (payload.updated_at as string | undefined) ??
+      context.currentTime.toISOString();
+    payload.last_mentioned_episode_id =
+      (payload.last_mentioned_episode_id as string | undefined) ?? id;
+    if (!payload.current_place) {
+      const fallbackPlace =
+        normalizeName(char.current_place) ??
+        placeNames[0] ??
+        (existing ? normalizeName(existing.current_place) : undefined) ??
+        'unknown';
+      if (fallbackPlace) {
+        const normalizedFallback = fallbackPlace;
+        if (!placeByName.has(normalizedFallback)) {
+          await upsertPlace({ name: normalizedFallback });
+        }
+        payload.current_place = normalizedFallback;
+      }
+    }
+
+    if (!existing) {
+      const created = await callWriteTool('characters.create', payload);
+      const recordArray = normalizeArray<Record<string, unknown>>(created);
+      const createdRecord =
+        recordArray[0] ?? toRecord(created ?? null) ?? undefined;
+      if (createdRecord && typeof createdRecord.name === 'string') {
+        const cast = createdRecord as EscapeFromSeoulCharacters;
+        setCharacterCache(cast);
+        if (
+          !context.references.characters.some(
+            (item) => normalizeName(item.name) === trimmedName,
+          )
+        ) {
+          context.references.characters.push(cast);
+        }
+      }
+
+      return;
+    }
+
+    const diff: Record<string, unknown> = {};
+    for (const key of characterColumns) {
+      if (key === 'name') continue;
+      const nextValue = payload[key];
+      if (nextValue === undefined) continue;
+      if (valuesDiffer((existing as Record<string, unknown>)[key], nextValue)) {
+        diff[key] = nextValue;
+      }
+    }
+
+    if (Object.keys(diff).length === 0) {
+      return;
+    }
+
+    const updatePayload = {
+      name: trimmedName,
+      ...diff,
+    };
+    await callWriteTool('characters.update', updatePayload);
+    const merged = {
+      ...existing,
+      ...updatePayload,
+    } as EscapeFromSeoulCharacters;
+    setCharacterCache(merged);
+    const refIndex = context.references.characters.findIndex(
+      (item) => normalizeName(item.name) === trimmedName,
+    );
+    if (refIndex >= 0) {
+      context.references.characters[refIndex] = merged;
+    } else {
+      context.references.characters.push(merged);
+    }
+  };
+
+  // 3. Sync places first to satisfy character dependencies
+  for (const place of context.draft.places) {
+    if (!normalizeName(place.name)) continue;
+    await upsertPlace(place);
   }
 
-  // 4. Sync places
-  for (const place of context.draft.places) {
-    if (!place.name && !place.id) continue;
-    await upsertPlace(place);
+  // 4. Sync characters
+  for (const char of context.draft.characters) {
+    if (!normalizeName(char.name)) continue;
+    await upsertCharacter(char);
   }
 }

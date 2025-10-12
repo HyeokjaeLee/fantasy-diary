@@ -152,35 +152,31 @@ export class NovelWritingAgent {
     fallback?: EscapeFromSeoulCharacters,
   ): EscapeFromSeoulCharacters | null {
     const base = fallback ?? null;
-    const id = this.stringOr(source.id, base?.id ?? '').trim();
     const name = this.stringOr(source.name, base?.name ?? '').trim();
-    if (!id || !name) {
+    if (!name) {
       return null;
     }
     const nowIso = new Date().toISOString();
-    const firstAppeared = this.stringOr(
-      source.first_appeared_at,
-      base?.first_appeared_at ?? '',
-    );
-    const lastUpdated = this.stringOr(
-      source.last_updated,
-      base?.last_updated ?? '',
+    const updatedAt =
+      this.stringOr(source.updated_at, base?.updated_at ?? '') || nowIso;
+    const lastMentionedEpisodeId = this.stringOr(
+      source.last_mentioned_episode_id,
+      base?.last_mentioned_episode_id ?? '',
     );
 
     return {
-      id,
       name,
       personality: this.stringOr(source.personality, base?.personality ?? ''),
       background: this.stringOr(source.background, base?.background ?? ''),
       appearance: this.stringOr(source.appearance, base?.appearance ?? ''),
-      current_location: this.stringOr(
-        source.current_location,
-        base?.current_location ?? '',
+      current_place: this.stringOr(
+        source.current_place,
+        base?.current_place ?? '',
       ),
       relationships:
         source.relationships !== undefined
           ? source.relationships
-          : (base?.relationships ?? []),
+          : base?.relationships ?? null,
       major_events: this.stringArrayOr(
         source.major_events,
         base?.major_events ?? [],
@@ -193,8 +189,8 @@ export class NovelWritingAgent {
         source.current_status,
         base?.current_status ?? '',
       ),
-      first_appeared_at: firstAppeared || base?.first_appeared_at || nowIso,
-      last_updated: lastUpdated || base?.last_updated || nowIso,
+      updated_at: updatedAt,
+      last_mentioned_episode_id: lastMentionedEpisodeId,
     };
   }
 
@@ -203,19 +199,42 @@ export class NovelWritingAgent {
     fallback?: EscapeFromSeoulPlaces,
   ): EscapeFromSeoulPlaces | null {
     const base = fallback ?? null;
-    const id = this.stringOr(source.id, base?.id ?? '').trim();
     const name = this.stringOr(source.name, base?.name ?? '').trim();
-    if (!id || !name) {
+    if (!name) {
       return null;
     }
+    const nowIso = new Date().toISOString();
+    const latitude =
+      this.parseCoordinate(source.latitude) ??
+      (typeof base?.latitude === 'number' ? base.latitude : 0);
+    const longitude =
+      this.parseCoordinate(source.longitude) ??
+      (typeof base?.longitude === 'number' ? base.longitude : 0);
+    const updatedAt =
+      this.stringOr(source.updated_at, base?.updated_at ?? '') || nowIso;
+    const lastMentionedEpisodeId = this.stringOr(
+      source.last_mentioned_episode_id,
+      base?.last_mentioned_episode_id ?? '',
+    );
 
     return {
-      id,
       name,
       current_situation: this.stringOr(
         source.current_situation,
         base?.current_situation ?? '',
       ),
+      latitude,
+      longitude,
+      last_weather_condition: this.stringOr(
+        source.last_weather_condition,
+        base?.last_weather_condition ?? '',
+      ),
+      last_weather_weather_condition: this.stringOr(
+        source.last_weather_weather_condition,
+        base?.last_weather_weather_condition ?? '',
+      ),
+      updated_at: updatedAt,
+      last_mentioned_episode_id: lastMentionedEpisodeId,
     };
   }
 
@@ -239,8 +258,8 @@ export class NovelWritingAgent {
             summary.push(`상태: ${character.current_status}`);
           if (character.personality)
             summary.push(`성격: ${character.personality}`);
-          if (character.current_location)
-            summary.push(`위치: ${character.current_location}`);
+          if (character.current_place)
+            summary.push(`위치: ${character.current_place}`);
           characterLines.push(`- ${summary.join(' | ')}`);
         });
       if (this.context.references.characters.length > maxItems) {
@@ -258,6 +277,10 @@ export class NovelWritingAgent {
         if (place.name) summary.push(place.name);
         if (place.current_situation)
           summary.push(`상황: ${place.current_situation}`);
+        if (Number.isFinite(place.latitude) && Number.isFinite(place.longitude))
+          summary.push(
+            `좌표: ${place.latitude.toFixed(3)}, ${place.longitude.toFixed(3)}`,
+          );
         placeLines.push(`- ${summary.join(' | ')}`);
       });
       if (this.context.references.places.length > maxItems) {
@@ -271,38 +294,52 @@ export class NovelWritingAgent {
   }
 
   private upsertCharacter(data: Record<string, unknown>) {
-    const name = typeof data.name === 'string' ? data.name.trim() : undefined;
-    const id = typeof data.id === 'string' ? data.id : undefined;
-    if (!name && !id) return;
+    const name = this.stringOr(data.name, '').trim();
+    const externalIdCandidate = this.stringOr(
+      (data as { externalId?: unknown }).externalId,
+      this.stringOr(data.id, ''),
+    ).trim();
+    const externalId = externalIdCandidate.length > 0 ? externalIdCandidate : undefined;
+    if (!name && !externalId) return;
 
     const draft = this.context.draft.characters;
     const index = draft.findIndex((item) => {
-      if (id && item.id === id) return true;
-      if (!id && name && item.name === name) return true;
+      if (name && item.name === name) return true;
+      if (externalId && item.externalId === externalId) return true;
 
       return false;
     });
 
-    const allowedKeys: Array<
-      keyof ChapterContext['draft']['characters'][number]
-    > = [
-      'id',
+    const allowedKeys: Array<keyof ChapterContext['draft']['characters'][number]> = [
+      'externalId',
       'name',
       'personality',
       'background',
       'appearance',
-      'current_location',
+      'current_place',
       'relationships',
       'major_events',
       'character_traits',
       'current_status',
-      'first_appeared_at',
-      'last_updated',
+      'updated_at',
+      'last_mentioned_episode_id',
     ];
 
     const next: ChapterContext['draft']['characters'][number] = {};
     for (const key of allowedKeys) {
-      const value = data[key as string];
+      if (key === 'externalId') {
+        if (externalId) {
+          next.externalId = externalId;
+        }
+        continue;
+      }
+      if (key === 'name') {
+        if (name) {
+          next.name = name;
+        }
+        continue;
+      }
+      const value = (data as Record<string, unknown>)[key as string];
       if (value !== undefined) {
         next[key] = value as never;
       }
@@ -320,24 +357,50 @@ export class NovelWritingAgent {
   }
 
   private upsertPlace(data: Record<string, unknown>) {
-    const name = typeof data.name === 'string' ? data.name.trim() : undefined;
-    const id = typeof data.id === 'string' ? data.id : undefined;
-    if (!name && !id) return;
+    const name = this.stringOr(data.name, '').trim();
+    const externalIdCandidate = this.stringOr(
+      (data as { externalId?: unknown }).externalId,
+      this.stringOr(data.id, ''),
+    ).trim();
+    const externalId = externalIdCandidate.length > 0 ? externalIdCandidate : undefined;
+    if (!name && !externalId) return;
 
     const draft = this.context.draft.places;
     const index = draft.findIndex((item) => {
-      if (id && item.id === id) return true;
-      if (!id && name && item.name === name) return true;
+      if (name && item.name === name) return true;
+      if (externalId && item.externalId === externalId) return true;
 
       return false;
     });
 
     const allowedKeys: Array<keyof ChapterContext['draft']['places'][number]> =
-      ['id', 'name', 'current_situation'];
+      [
+        'externalId',
+        'name',
+        'current_situation',
+        'latitude',
+        'longitude',
+        'last_weather_condition',
+        'last_weather_weather_condition',
+        'updated_at',
+        'last_mentioned_episode_id',
+      ];
 
     const next: ChapterContext['draft']['places'][number] = {};
     for (const key of allowedKeys) {
-      const value = data[key as string];
+      if (key === 'externalId') {
+        if (externalId) {
+          next.externalId = externalId;
+        }
+        continue;
+      }
+      if (key === 'name') {
+        if (name) {
+          next.name = name;
+        }
+        continue;
+      }
+      const value = (data as Record<string, unknown>)[key as string];
       if (value !== undefined) {
         next[key] = value as never;
       }
@@ -354,15 +417,16 @@ export class NovelWritingAgent {
 
   private updateCharacterReference(data: Record<string, unknown>) {
     const references = this.context.references.characters;
-    const index = references.findIndex(
-      (item) =>
-        (typeof data.id === 'string' && item.id === data.id) ||
-        (typeof data.name === 'string' &&
-          item.name === data.name.trim() &&
-          item.name.length > 0),
-    );
+    const name = this.stringOr(data.name, '').trim();
+    if (!name) {
+      return;
+    }
+    const index = references.findIndex((item) => item.name === name);
     const current = index >= 0 ? references[index] : undefined;
-    const normalized = this.mergeCharacterReference(data, current);
+    const normalized = this.mergeCharacterReference(
+      { ...data, name },
+      current,
+    );
     if (!normalized) {
       return;
     }
@@ -376,15 +440,16 @@ export class NovelWritingAgent {
 
   private updatePlaceReference(data: Record<string, unknown>) {
     const references = this.context.references.places;
-    const index = references.findIndex(
-      (item) =>
-        (typeof data.id === 'string' && item.id === data.id) ||
-        (typeof data.name === 'string' &&
-          item.name === data.name.trim() &&
-          item.name.length > 0),
-    );
+    const name = this.stringOr(data.name, '').trim();
+    if (!name) {
+      return;
+    }
+    const index = references.findIndex((item) => item.name === name);
     const current = index >= 0 ? references[index] : undefined;
-    const normalized = this.mergePlaceReference(data, current);
+    const normalized = this.mergePlaceReference(
+      { ...data, name },
+      current,
+    );
     if (!normalized) {
       return;
     }
@@ -467,13 +532,22 @@ export class NovelWritingAgent {
 
       const placeRecord: Record<string, unknown> = {};
       if (placeId) {
-        placeRecord.id = placeId;
+        placeRecord.externalId = placeId;
       }
       if (placeName) {
         placeRecord.name = placeName;
       }
       if (situation) {
         placeRecord.current_situation = situation;
+      }
+      const coordinates = this.toRecord(detailRecord.coordinates);
+      const latitude = this.parseCoordinate(coordinates?.latitude);
+      const longitude = this.parseCoordinate(coordinates?.longitude);
+      if (typeof latitude === 'number' && Number.isFinite(latitude)) {
+        placeRecord.latitude = latitude;
+      }
+      if (typeof longitude === 'number' && Number.isFinite(longitude)) {
+        placeRecord.longitude = longitude;
       }
 
       if (Object.keys(placeRecord).length > 0) {
@@ -795,11 +869,22 @@ export class NovelWritingAgent {
     if (this.context.previousChapter) {
       parts.push('## 이전 챕터 정보');
       parts.push(`ID: ${this.context.previousChapter.id}`);
-      parts.push(`작성 시간: ${this.context.previousChapter.created_at}`);
-      parts.push('');
-      parts.push('### 이전 챕터 내용 (일부)');
-      parts.push(this.context.previousChapter.content.slice(0, 1000) + '...');
-      parts.push('');
+      if (this.context.previousChapter.summary) {
+        parts.push(`요약: ${this.context.previousChapter.summary}`);
+      }
+      if (this.context.previousChapter.content) {
+        parts.push('');
+        parts.push('### 이전 챕터 내용 (일부)');
+        const preview = this.context.previousChapter.content.slice(0, 1000);
+        parts.push(
+          preview.length === this.context.previousChapter.content.length
+            ? preview
+            : `${preview}...`,
+        );
+        parts.push('');
+      } else {
+        parts.push('');
+      }
     } else {
       parts.push('## 첫 번째 챕터입니다');
       parts.push(
@@ -811,7 +896,7 @@ export class NovelWritingAgent {
     parts.push('## 작업 내용');
     parts.push('다음 챕터를 구상하기 위해:');
     parts.push('');
-    parts.push('1. 이전 챕터 분석 (필요시 entries.get 사용)');
+    parts.push('1. 이전 챕터 분석 (필요시 episodes.get 사용)');
     parts.push('2. 주요 캐릭터의 현재 위치 파악');
     parts.push(
       '3. 배경으로 사용할 실제 위치의 위도·경도를 결정하고 기록 (예: 서울 시청 37.5665, 126.9780)',
