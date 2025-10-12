@@ -5,7 +5,6 @@ export const ENV = createEnv({
   // 서버 전용 환경변수 (예: SERVICE_ROLE 등) 필요 시 여기에 추가
   server: {
     NEXT_SUPABASE_SERVICE_ROLE: z.string().min(1),
-    NEXT_WEATHER_API_KEY: z.string().min(1),
     NEXT_GOOGLE_GEMINI_API_KEY: z.string().min(1),
     NEXT_GOOGLE_MAP_API_KEY: z.string().min(1),
   },
@@ -23,7 +22,6 @@ export const ENV = createEnv({
     NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NEXT_SUPABASE_SERVICE_ROLE: process.env.NEXT_SUPABASE_SERVICE_ROLE,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-    NEXT_WEATHER_API_KEY: process.env.NEXT_WEATHER_API_KEY,
     NEXT_GOOGLE_GEMINI_API_KEY: process.env.NEXT_GOOGLE_GEMINI_API_KEY,
     NEXT_GOOGLE_MAP_API_KEY: process.env.NEXT_GOOGLE_MAP_API_KEY,
   },
