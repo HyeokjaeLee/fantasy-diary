@@ -84,9 +84,7 @@ const toNumber = (value: unknown): number | undefined => {
 const stripUndefined = <T extends Record<string, unknown>>(
   input: T,
 ): Partial<T> => {
-  const entries = Object.entries(input).filter(
-    ([, val]) => val !== undefined,
-  );
+  const entries = Object.entries(input).filter(([, val]) => val !== undefined);
 
   return Object.fromEntries(entries) as Partial<T>;
 };
@@ -199,15 +197,12 @@ const buildCharacterCreate = (
     background: normalizeString(input.background),
     appearance: normalizeString(input.appearance),
     current_place: normalizeString(input.current_place, 'unknown'),
-    relationships:
-      input.relationships !== undefined ? input.relationships : [],
+    relationships: input.relationships !== undefined ? input.relationships : [],
     major_events: majorEvents,
     character_traits: characterTraits,
     current_status: normalizeString(input.current_status),
     updated_at: input.updated_at ?? nowIso,
-    last_mentioned_episode_id: normalizeString(
-      input.last_mentioned_episode_id,
-    ),
+    last_mentioned_episode_id: normalizeString(input.last_mentioned_episode_id),
   };
 };
 
@@ -270,9 +265,7 @@ const buildPlaceCreate = (
       input.last_weather_weather_condition,
     ),
     updated_at: input.updated_at ?? nowIso,
-    last_mentioned_episode_id: normalizeString(
-      input.last_mentioned_episode_id,
-    ),
+    last_mentioned_episode_id: normalizeString(input.last_mentioned_episode_id),
   };
 };
 
@@ -326,7 +319,10 @@ const tools: Array<ToolDef<unknown, unknown>> = [
           type: 'string',
           description: '에피소드 ID (예: YYYYMMDDHHmm 형태)',
         },
-        content: { type: 'string', description: '에피소드 본문 (마크다운 허용)' },
+        content: {
+          type: 'string',
+          description: '에피소드 본문 (마크다운 허용)',
+        },
         summary: {
           type: 'string',
           description: '간단한 요약 (선택 사항)',
@@ -389,10 +385,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         return { ok: true };
       }
       configureSupabaseRest();
+      const payload = {
+        id: parsed.id,
+        ...body,
+      } satisfies Partial<EscapeFromSeoulEpisodes> & { id: string };
       const { error } = await patchEscapeFromSeoulEpisodes({
         headers: { Prefer: 'return=minimal' },
         query: { id: `eq.${parsed.id}` },
-        body: { id: parsed.id, ...body },
+        body: payload as EscapeFromSeoulEpisodes,
       });
       if (error) throw new Error(String(error));
 
@@ -471,10 +471,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         return { ok: true };
       }
       configureSupabaseRest();
+      const payload = {
+        name: parsed.name,
+        ...body,
+      } satisfies Partial<EscapeFromSeoulCharacters> & { name: string };
       const { error } = await patchEscapeFromSeoulCharacters({
         headers: { Prefer: 'return=minimal' },
         query: { name: `eq.${parsed.name}` },
-        body: { name: parsed.name, ...body },
+        body: payload as EscapeFromSeoulCharacters,
       });
       if (error) throw new Error(String(error));
 
@@ -549,10 +553,14 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         return { ok: true };
       }
       configureSupabaseRest();
+      const payload = {
+        name: parsed.name,
+        ...body,
+      } satisfies Partial<EscapeFromSeoulPlaces> & { name: string };
       const { error } = await patchEscapeFromSeoulPlaces({
         headers: { Prefer: 'return=minimal' },
         query: { name: `eq.${parsed.name}` },
-        body: { name: parsed.name, ...body },
+        body: payload as EscapeFromSeoulPlaces,
       });
       if (error) throw new Error(String(error));
 
