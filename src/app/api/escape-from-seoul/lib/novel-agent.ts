@@ -5,18 +5,19 @@ import {
   FunctionCallingConfigMode,
   type FunctionDeclaration,
   GoogleGenAI,
-  type Part,
 } from '@google/genai';
-import type {
-  EscapeFromSeoulCharacters,
-  EscapeFromSeoulPlaces,
-} from '@supabase-api/types.gen';
 
+import { IS_DEV } from '@/constants';
 import { ENV } from '@/env';
 
 import type { ChapterContext, PhaseResult } from '../types/novel';
 import { executeMcpTool } from './mcp-client';
-import { NOVEL_CONFIG, SYSTEM_PROMPT } from './novel-config';
+import { SYSTEM_PROMPT } from './novel-config';
+
+const RECONCILIATION_PROMPT = `
+당신은 "Escape from Seoul" 프로젝트의 데이터 정리 담당자입니다.
+작성된 콘텐츠를 분석하여 DB 저장에 필요한 정보를 정확히 추출하세요.
+`.trim();
 
 const GEMINI_MODEL = 'gemini-2.5-pro';
 
@@ -28,7 +29,8 @@ type AgentMessage = {
 export class NovelWritingAgent {
   private client: GoogleGenAI;
   private context: ChapterContext;
-  private functionDeclarations: FunctionDeclaration[];
+  private allTools: FunctionDeclaration[];
+  private readOnlyTools: FunctionDeclaration[];
 
   constructor(
     context: ChapterContext,
@@ -38,654 +40,231 @@ export class NovelWritingAgent {
       apiKey: ENV.NEXT_GOOGLE_GEMINI_API_KEY,
     });
     this.context = context;
-    this.functionDeclarations = functionDeclarations;
+    this.allTools = functionDeclarations;
+
+    // read 도구만 필터링 (write 도구 제외)
+    this.readOnlyTools = functionDeclarations.filter(
+      (tool) =>
+        !tool.name?.includes('.create') &&
+        !tool.name?.includes('.update') &&
+        !tool.name?.includes('.delete'),
+    );
   }
 
   private debug(message: string) {
-    console.info(`[${this.context.chapterId}] ${message}`);
+    console.info(`[${this.context.id ?? 'unknown'}] ${message}`);
   }
 
-  private preview(
-    content: string | Part[] | undefined,
-    maxLength = 160,
-  ): string {
-    if (!content) return '(empty)';
-    const text = Array.isArray(content)
-      ? content
-          .map((part) => {
-            if (!part) return '';
-            if (typeof part.text === 'string') {
-              return part.text;
-            }
-            if (part.functionCall) {
-              return `function:${part.functionCall.name ?? 'unknown'}`;
-            }
-            if (part.functionResponse) {
-              return `response:${part.functionResponse.name ?? 'unknown'}`;
-            }
+  private logContextChange(phase: string, changes: Partial<ChapterContext>) {
+    if (!IS_DEV) return;
 
-            return JSON.stringify(part);
-          })
-          .join(' ')
-      : content;
-    const normalized = text.replace(/\s+/g, ' ').trim();
-    if (normalized.length <= maxLength) return normalized;
+    const { content, ...restChanges } = changes;
+    const contentInfo =
+      content !== undefined ? { contentLength: content.length } : {};
 
-    return `${normalized.slice(0, maxLength)}...`;
-  }
-
-  private partsToPlainText(parts: Part[] | undefined): string {
-    if (!parts) return '';
-
-    return parts
-      .map((part) => (typeof part.text === 'string' ? part.text : ''))
-      .join('')
-      .trim();
-  }
-
-  private normalizeToolResponse(result: string): Record<string, unknown> {
-    const parsed = this.tryParseJson(result);
-    if (this.isRecord(parsed)) {
-      return parsed;
-    }
-    if (Array.isArray(parsed)) {
-      return { result: parsed };
-    }
-    if (typeof parsed === 'string') {
-      return { result: parsed };
-    }
-
-    return { result };
-  }
-
-  private toRecord(value: unknown): Record<string, unknown> | null {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return null;
-    }
-
-    return value as Record<string, unknown>;
-  }
-
-  private tryParseJson(value: string): unknown {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return null;
-    }
-  }
-
-  private isRecord(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-  }
-
-  private stringOr(value: unknown, fallback = ''): string {
-    return typeof value === 'string' ? value : fallback;
-  }
-
-  private stringArrayOr(value: unknown, fallback: string[] = []): string[] {
-    if (!Array.isArray(value)) {
-      return fallback;
-    }
-
-    const items = value
-      .map((item) => (typeof item === 'string' ? item : null))
-      .filter((item): item is string => item !== null);
-
-    return items.length > 0 ? items : fallback;
-  }
-
-  private parseCoordinate(value: unknown): number | null {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number.parseFloat(value);
-
-      return Number.isFinite(parsed) ? parsed : null;
-    }
-
-    return null;
-  }
-
-  private mergeCharacterReference(
-    source: Record<string, unknown>,
-    fallback?: EscapeFromSeoulCharacters,
-  ): EscapeFromSeoulCharacters | null {
-    const base = fallback ?? null;
-    const name = this.stringOr(source.name, base?.name ?? '').trim();
-    if (!name) {
-      return null;
-    }
-    const nowIso = new Date().toISOString();
-    const updatedAt =
-      this.stringOr(source.updated_at, base?.updated_at ?? '') || nowIso;
-    const lastMentionedEpisodeId = this.stringOr(
-      source.last_mentioned_episode_id,
-      base?.last_mentioned_episode_id ?? '',
+    console.info(
+      `[${this.context.id ?? 'unknown'}] 📝 Context updated in ${phase}:`,
+      {
+        ...restChanges,
+        ...contentInfo,
+      },
     );
-
-    return {
-      name,
-      personality: this.stringOr(source.personality, base?.personality ?? ''),
-      background: this.stringOr(source.background, base?.background ?? ''),
-      appearance: this.stringOr(source.appearance, base?.appearance ?? ''),
-      current_place: this.stringOr(
-        source.current_place,
-        base?.current_place ?? '',
-      ),
-      relationships:
-        source.relationships !== undefined
-          ? source.relationships
-          : base?.relationships ?? null,
-      major_events: this.stringArrayOr(
-        source.major_events,
-        base?.major_events ?? [],
-      ),
-      character_traits: this.stringArrayOr(
-        source.character_traits,
-        base?.character_traits ?? [],
-      ),
-      current_status: this.stringOr(
-        source.current_status,
-        base?.current_status ?? '',
-      ),
-      updated_at: updatedAt,
-      last_mentioned_episode_id: lastMentionedEpisodeId,
-    };
   }
 
-  private mergePlaceReference(
-    source: Record<string, unknown>,
-    fallback?: EscapeFromSeoulPlaces,
-  ): EscapeFromSeoulPlaces | null {
-    const base = fallback ?? null;
-    const name = this.stringOr(source.name, base?.name ?? '').trim();
-    if (!name) {
-      return null;
-    }
-    const nowIso = new Date().toISOString();
-    const latitude =
-      this.parseCoordinate(source.latitude) ??
-      (typeof base?.latitude === 'number' ? base.latitude : 0);
-    const longitude =
-      this.parseCoordinate(source.longitude) ??
-      (typeof base?.longitude === 'number' ? base.longitude : 0);
-    const updatedAt =
-      this.stringOr(source.updated_at, base?.updated_at ?? '') || nowIso;
-    const lastMentionedEpisodeId = this.stringOr(
-      source.last_mentioned_episode_id,
-      base?.last_mentioned_episode_id ?? '',
-    );
+  // References 업데이트 헬퍼
+  private async updateCharacterReferences(characterNames: string[]) {
+    for (const name of characterNames) {
+      // 이미 references에 있는지 확인
+      if (this.context.references.characters.some((c) => c.name === name)) {
+        continue;
+      }
 
-    return {
-      name,
-      current_situation: this.stringOr(
-        source.current_situation,
-        base?.current_situation ?? '',
-      ),
-      latitude,
-      longitude,
-      last_weather_condition: this.stringOr(
-        source.last_weather_condition,
-        base?.last_weather_condition ?? '',
-      ),
-      last_weather_weather_condition: this.stringOr(
-        source.last_weather_weather_condition,
-        base?.last_weather_weather_condition ?? '',
-      ),
-      updated_at: updatedAt,
-      last_mentioned_episode_id: lastMentionedEpisodeId,
-    };
-  }
+      // DB에서 캐릭터 조회
+      try {
+        const result = await executeMcpTool('characters_list', { name });
+        const parsed = JSON.parse(result);
+        const characters = Array.isArray(parsed) ? parsed : [];
 
-  private summarizeReferences(): {
-    characters: string[];
-    places: string[];
-  } {
-    const characterLines: string[] = [];
-    const placeLines: string[] = [];
-    const maxItems = 20;
-
-    if (this.context.references.characters.length === 0) {
-      characterLines.push('- (등록된 캐릭터 없음 → 새 인물을 창작해야 합니다)');
-    } else {
-      this.context.references.characters
-        .slice(0, maxItems)
-        .forEach((character) => {
-          const summary: string[] = [];
-          if (character.name) summary.push(character.name);
-          if (character.current_status)
-            summary.push(`상태: ${character.current_status}`);
-          if (character.personality)
-            summary.push(`성격: ${character.personality}`);
-          if (character.current_place)
-            summary.push(`위치: ${character.current_place}`);
-          characterLines.push(`- ${summary.join(' | ')}`);
-        });
-      if (this.context.references.characters.length > maxItems) {
-        characterLines.push(
-          `- ... (${this.context.references.characters.length - maxItems}명 추가)`,
-        );
+        if (characters.length > 0) {
+          this.context.references.characters.push(characters[0]);
+          if (IS_DEV) {
+            console.info(`[${this.context.id ?? 'unknown'}] 👤 Added character to context: ${name}`);
+          }
+        }
+      } catch (error) {
+        this.debug(`Failed to fetch character ${name}: ${error instanceof Error ? error.message : 'Unknown'}`);
       }
     }
-
-    if (this.context.references.places.length === 0) {
-      placeLines.push('- (등록된 장소 없음 → 새 배경을 창작해야 합니다)');
-    } else {
-      this.context.references.places.slice(0, maxItems).forEach((place) => {
-        const summary: string[] = [];
-        if (place.name) summary.push(place.name);
-        if (place.current_situation)
-          summary.push(`상황: ${place.current_situation}`);
-        if (Number.isFinite(place.latitude) && Number.isFinite(place.longitude))
-          summary.push(
-            `좌표: ${place.latitude.toFixed(3)}, ${place.longitude.toFixed(3)}`,
-          );
-        placeLines.push(`- ${summary.join(' | ')}`);
-      });
-      if (this.context.references.places.length > maxItems) {
-        placeLines.push(
-          `- ... (${this.context.references.places.length - maxItems}곳 추가)`,
-        );
-      }
-    }
-
-    return { characters: characterLines, places: placeLines };
   }
 
-  private upsertCharacter(data: Record<string, unknown>) {
-    const name = this.stringOr(data.name, '').trim();
-    const externalIdCandidate = this.stringOr(
-      (data as { externalId?: unknown }).externalId,
-      this.stringOr(data.id, ''),
-    ).trim();
-    const externalId = externalIdCandidate.length > 0 ? externalIdCandidate : undefined;
-    if (!name && !externalId) return;
+  private async updatePlaceReferences(placeNames: string[]) {
+    for (const name of placeNames) {
+      // 이미 references에 있는지 확인
+      if (this.context.references.places.some((p) => p.name === name)) {
+        continue;
+      }
 
-    const draft = this.context.draft.characters;
-    const index = draft.findIndex((item) => {
-      if (name && item.name === name) return true;
-      if (externalId && item.externalId === externalId) return true;
+      // DB에서 장소 조회
+      try {
+        const result = await executeMcpTool('places_list', { name });
+        const parsed = JSON.parse(result);
+        const places = Array.isArray(parsed) ? parsed : [];
 
-      return false;
-    });
+        if (places.length > 0) {
+          this.context.references.places.push(places[0]);
+          if (IS_DEV) {
+            console.info(`[${this.context.id ?? 'unknown'}] 📍 Added place to context: ${name}`);
+          }
+        }
+      } catch (error) {
+        this.debug(`Failed to fetch place ${name}: ${error instanceof Error ? error.message : 'Unknown'}`);
+      }
+    }
+  }
 
-    const allowedKeys: Array<keyof ChapterContext['draft']['characters'][number]> = [
-      'externalId',
-      'name',
-      'personality',
-      'background',
-      'appearance',
-      'current_place',
-      'relationships',
-      'major_events',
-      'character_traits',
-      'current_status',
-      'updated_at',
-      'last_mentioned_episode_id',
+  // Phase 0: Planning - 이전 에피소드 분석 및 previousStory 생성
+  async executePlanning(): Promise<PhaseResult> {
+    const prompt = `
+# Planning Phase
+
+이전 에피소드들을 분석하여 스토리 맥락을 파악하세요.
+
+## 작업
+1. episodes.list 도구로 최근 5개 에피소드 조회
+2. characters.list, places.list로 기존 캐릭터와 장소 목록 조회
+3. 이전 에피소드들의 주요 내용, 등장인물, 장소, 진행 상황을 요약하여 previousStory 작성
+4. 응답 형식:
+\`\`\`json
+{
+  "previousStory": "지금까지의 이야기 요약 (300-500자)",
+  "keyCharacters": ["캐릭터1", "캐릭터2", ...],
+  "keyPlaces": ["장소1", "장소2", ...]
+}
+\`\`\`
+`;
+
+    const messages: AgentMessage[] = [
+      {
+        role: 'system',
+        content:
+          '당신은 스토리 분석가입니다. 이전 에피소드를 분석하고 맥락을 정리하세요.',
+      },
+      { role: 'user', content: prompt },
     ];
 
-    const next: ChapterContext['draft']['characters'][number] = {};
-    for (const key of allowedKeys) {
-      if (key === 'externalId') {
-        if (externalId) {
-          next.externalId = externalId;
-        }
-        continue;
-      }
-      if (key === 'name') {
-        if (name) {
-          next.name = name;
-        }
-        continue;
-      }
-      const value = (data as Record<string, unknown>)[key as string];
-      if (value !== undefined) {
-        next[key] = value as never;
-      }
-    }
-
-    if (index >= 0) {
-      draft[index] = { ...draft[index], ...next };
-    } else {
-      draft.push(next);
-    }
-
-    this.debug(
-      `Tracked character draft: ${this.preview(JSON.stringify(next))}`,
-    );
-  }
-
-  private upsertPlace(data: Record<string, unknown>) {
-    const name = this.stringOr(data.name, '').trim();
-    const externalIdCandidate = this.stringOr(
-      (data as { externalId?: unknown }).externalId,
-      this.stringOr(data.id, ''),
-    ).trim();
-    const externalId = externalIdCandidate.length > 0 ? externalIdCandidate : undefined;
-    if (!name && !externalId) return;
-
-    const draft = this.context.draft.places;
-    const index = draft.findIndex((item) => {
-      if (name && item.name === name) return true;
-      if (externalId && item.externalId === externalId) return true;
-
-      return false;
-    });
-
-    const allowedKeys: Array<keyof ChapterContext['draft']['places'][number]> =
-      [
-        'externalId',
-        'name',
-        'current_situation',
-        'latitude',
-        'longitude',
-        'last_weather_condition',
-        'last_weather_weather_condition',
-        'updated_at',
-        'last_mentioned_episode_id',
-      ];
-
-    const next: ChapterContext['draft']['places'][number] = {};
-    for (const key of allowedKeys) {
-      if (key === 'externalId') {
-        if (externalId) {
-          next.externalId = externalId;
-        }
-        continue;
-      }
-      if (key === 'name') {
-        if (name) {
-          next.name = name;
-        }
-        continue;
-      }
-      const value = (data as Record<string, unknown>)[key as string];
-      if (value !== undefined) {
-        next[key] = value as never;
-      }
-    }
-
-    if (index >= 0) {
-      draft[index] = { ...draft[index], ...next };
-    } else {
-      draft.push(next);
-    }
-
-    this.debug(`Tracked place draft: ${this.preview(JSON.stringify(next))}`);
-  }
-
-  private updateCharacterReference(data: Record<string, unknown>) {
-    const references = this.context.references.characters;
-    const name = this.stringOr(data.name, '').trim();
-    if (!name) {
-      return;
-    }
-    const index = references.findIndex((item) => item.name === name);
-    const current = index >= 0 ? references[index] : undefined;
-    const normalized = this.mergeCharacterReference(
-      { ...data, name },
-      current,
-    );
-    if (!normalized) {
-      return;
-    }
-
-    if (index >= 0) {
-      references[index] = normalized;
-    } else {
-      references.push(normalized);
-    }
-  }
-
-  private updatePlaceReference(data: Record<string, unknown>) {
-    const references = this.context.references.places;
-    const name = this.stringOr(data.name, '').trim();
-    if (!name) {
-      return;
-    }
-    const index = references.findIndex((item) => item.name === name);
-    const current = index >= 0 ? references[index] : undefined;
-    const normalized = this.mergePlaceReference(
-      { ...data, name },
-      current,
-    );
-    if (!normalized) {
-      return;
-    }
-
-    if (index >= 0) {
-      references[index] = normalized;
-    } else {
-      references.push(normalized);
-    }
-  }
-
-  private recordToolSideEffects(
-    toolName: string,
-    args: unknown,
-    rawResult: string,
-  ) {
-    const canonicalName = toolName.replace(/_/g, '.');
-    if (canonicalName === 'weather.openMeteo.lookup') {
-      const parsed = this.tryParseJson(rawResult);
-      const resultRecord = this.toRecord(parsed);
-      if (resultRecord) {
-        const argsRecord = this.toRecord(args);
-        const requestRecord = this.toRecord(resultRecord.request);
-        const latitude =
-          this.parseCoordinate(argsRecord?.latitude) ??
-          this.parseCoordinate(requestRecord?.latitude);
-        const longitude =
-          this.parseCoordinate(argsRecord?.longitude) ??
-          this.parseCoordinate(requestRecord?.longitude);
-        const unitsSystem =
-          (typeof argsRecord?.unitsSystem === 'string'
-            ? argsRecord.unitsSystem
-            : undefined) ??
-          (typeof requestRecord?.unitsSystem === 'string'
-            ? requestRecord.unitsSystem
-            : undefined);
-        const timezone =
-          (typeof argsRecord?.timezone === 'string'
-            ? argsRecord.timezone
-            : undefined) ??
-          (typeof requestRecord?.timezone === 'string'
-            ? requestRecord.timezone
-            : undefined);
-
-        const location =
-          typeof latitude === 'number' && typeof longitude === 'number'
-            ? { latitude, longitude }
-            : this.context.weather?.location;
-
-        if (location) {
-          this.context.weather = {
-            location,
-            data: resultRecord,
-            unitsSystem: unitsSystem ?? this.context.weather?.unitsSystem,
-            timeZone: timezone ?? this.context.weather?.timeZone,
-          };
-        }
-      }
-
-      return;
-    }
-    if (canonicalName === 'google.places.describe') {
-      const parsed = this.tryParseJson(rawResult);
-      const resultRecord = this.toRecord(parsed);
-      if (!resultRecord) return;
-      const detailRecord = this.toRecord(resultRecord.detail);
-      if (!detailRecord) return;
-
-      const generativeSummary = this.toRecord(detailRecord.generativeSummary);
-      const placeId =
-        this.stringOr(detailRecord.id, '') ||
-        this.stringOr(detailRecord.resourceName, '');
-      const placeName =
-        this.stringOr(detailRecord.displayName, '') ||
-        this.stringOr(detailRecord.formattedAddress, '');
-      const situation =
-        this.stringOr(generativeSummary?.overview, '') ||
-        this.stringOr(detailRecord.editorialSummary, '') ||
-        this.stringOr(generativeSummary?.disclosure, '');
-
-      const placeRecord: Record<string, unknown> = {};
-      if (placeId) {
-        placeRecord.externalId = placeId;
-      }
-      if (placeName) {
-        placeRecord.name = placeName;
-      }
-      if (situation) {
-        placeRecord.current_situation = situation;
-      }
-      const coordinates = this.toRecord(detailRecord.coordinates);
-      const latitude = this.parseCoordinate(coordinates?.latitude);
-      const longitude = this.parseCoordinate(coordinates?.longitude);
-      if (typeof latitude === 'number' && Number.isFinite(latitude)) {
-        placeRecord.latitude = latitude;
-      }
-      if (typeof longitude === 'number' && Number.isFinite(longitude)) {
-        placeRecord.longitude = longitude;
-      }
-
-      if (Object.keys(placeRecord).length > 0) {
-        this.upsertPlace(placeRecord);
-        this.updatePlaceReference(placeRecord);
-      }
-
-      return;
-    }
-    if (
-      canonicalName !== 'characters.create' &&
-      canonicalName !== 'characters.update' &&
-      canonicalName !== 'places.create' &&
-      canonicalName !== 'places.update'
-    ) {
-      return;
-    }
-
-    const argRecord = this.toRecord(args);
-    const parsed = this.tryParseJson(rawResult);
-    const resultRecord = Array.isArray(parsed)
-      ? this.toRecord(parsed[0])
-      : this.toRecord(parsed);
-    const merged = {
-      ...(argRecord ?? {}),
-      ...(resultRecord ?? {}),
-    };
-
-    if (
-      canonicalName === 'characters.create' ||
-      canonicalName === 'characters.update'
-    ) {
-      this.upsertCharacter(merged);
-      this.updateCharacterReference(merged);
-    } else if (canonicalName === 'places.create') {
-      this.upsertPlace(merged);
-      this.updatePlaceReference(merged);
-    } else if (canonicalName === 'places.update') {
-      this.upsertPlace(merged);
-      this.updatePlaceReference(merged);
-    }
-  }
-
-  private async loadReferenceData(forceReload = false): Promise<void> {
-    const needsCharacters =
-      forceReload || this.context.references.characters.length === 0;
-    const needsPlaces =
-      forceReload || this.context.references.places.length === 0;
-    if (!needsCharacters && !needsPlaces) {
-      return;
-    }
+    const output = await this.chatWithTools(messages, this.readOnlyTools);
 
     try {
-      const [charactersRaw, placesRaw] = await Promise.all([
-        executeMcpTool('characters_list', { limit: 100 }),
-        executeMcpTool('places_list', { limit: 100 }),
-      ]);
-      const parsedCharacters = this.tryParseJson(charactersRaw);
-      const parsedPlaces = this.tryParseJson(placesRaw);
+      const jsonMatch = output.match(/```json\s*([\s\S]*?)\s*```/);
+      const jsonString = jsonMatch ? jsonMatch[1] : output;
+      const result = JSON.parse(jsonString);
 
-      if (needsCharacters) {
-        const characters = Array.isArray(parsedCharacters)
-          ? parsedCharacters
-              .map((item) =>
-                this.isRecord(item) ? this.mergeCharacterReference(item) : null,
-              )
-              .filter(
-                (item): item is EscapeFromSeoulCharacters => item !== null,
-              )
-          : [];
-        this.context.references.characters = characters;
+      this.context.previousStory = result.previousStory || '';
+
+      // keyCharacters/keyPlaces로 references 조회 및 업데이트
+      if (result.keyCharacters?.length > 0) {
+        await this.updateCharacterReferences(result.keyCharacters);
+      }
+      if (result.keyPlaces?.length > 0) {
+        await this.updatePlaceReferences(result.keyPlaces);
       }
 
-      if (needsPlaces) {
-        const places = Array.isArray(parsedPlaces)
-          ? parsedPlaces
-              .map((item) =>
-                this.isRecord(item) ? this.mergePlaceReference(item) : null,
-              )
-              .filter((item): item is EscapeFromSeoulPlaces => item !== null)
-          : [];
-        this.context.references.places = places;
-      }
+      this.logContextChange('planning', {
+        previousStory: this.context.previousStory,
+        references: this.context.references,
+      });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Unknown reference load error';
-      this.debug(`Failed to load reference data: ${message}`);
+      this.debug(
+        `Failed to parse planning result: ${error instanceof Error ? error.message : 'Unknown'}`,
+      );
+      this.context.previousStory = '';
+      this.logContextChange('planning', { previousStory: '' });
     }
+
+    return {
+      success: true,
+      phase: 'planning',
+      output,
+      context: this.context,
+    };
   }
 
-  async reconcileEntities(): Promise<void> {
-    await this.loadReferenceData(true);
-    const systemPrompt =
-      '당신은 "Escape from Seoul" 프로젝트의 데이터 정합성을 책임지는 기록 보조원입니다. 주 임무는 스토리에서 등장한 캐릭터와 장소가 Supabase DB에 모두 반영되도록 MCP 도구를 호출하는 것입니다.';
-    const summaries = this.summarizeReferences();
+  // Phase 1: Prewriting - 구상
+  async executePrewriting(): Promise<PhaseResult> {
+    const characterInfo = this.context.references.characters
+      .map((c) => `- ${c.name}: ${c.personality || ''} (현재: ${c.current_place || ''})`).join('\n') || '(없음)';
+    
+    const placeInfo = this.context.references.places
+      .map((p) => `- ${p.name}: ${p.current_situation || ''}`).join('\n') || '(없음)';
 
-    const prompt = [
-      '# Entity Reconciliation',
-      '',
-      '## 기존 등장인물',
-      ...summaries.characters,
-      '',
-      '## 기존 장소',
-      ...summaries.places,
-      '',
-      '## 최신 본문',
-      this.context.draft.content || '(본문 없음)',
-      '',
-      '## 지침',
-      '- 본문에서 새롭게 등장한 캐릭터나 장소가 기존 목록에 없으면 `characters.create` 또는 `places.create`를 호출해 기본 정보를 저장하세요.',
-      '- 기존 인물/장소의 속성이 본문 내용으로 갱신되어야 한다면 `characters.update` 또는 `places.update`로 최신 정보를 반영하세요.',
-      '- 모든 도구 호출 후에는 응답을 확인하고 오류가 있으면 수정해 다시 시도하세요.',
-      '- 추가 조치가 필요 없다면 도구를 호출하지 말고 "OK"라고만 답하세요.',
-    ].join('\n');
+    const prompt = `
+# Prewriting Phase
+
+## 지금까지의 이야기
+${this.context.previousStory || '(첫 에피소드)'}
+
+## 기존 캐릭터
+${characterInfo}
+
+## 기존 장소
+${placeInfo}
+
+## 작업
+다음 챕터의 전개 방향을 구상하세요:
+
+1. **새로운 장소나 캐릭터를 언급할 경우**:
+   - 기존 캐릭터/장소 목록을 먼저 확인
+   - 새로운 장소라면 google.places.describe와 weather.openMeteo.lookup으로 실제 정보 조회
+   - 조회한 정보를 바탕으로 생생하게 묘사
+   
+2. **구상 내용**:
+   - 주요 사건과 갈등
+   - 등장 캐릭터와 역할
+   - 배경 장소와 분위기
+   - 감정적 흐름
+
+3. **응답 형식** (JSON으로 답변):
+\`\`\`json
+{
+  "outline": "전개 방향 요약",
+  "mentionedCharacters": ["언급할 캐릭터 이름들"],
+  "mentionedPlaces": ["언급할 장소 이름들"]
+}
+\`\`\`
+`;
+
+    const systemPrompt = `${SYSTEM_PROMPT}
+
+# 구상 단계 안내
+이 단계에서는 다음 챕터의 전개를 자유롭게 구상합니다.
+필요시 characters.list, places.list, google.places.describe, weather.openMeteo.lookup 등 조회 도구를 사용할 수 있습니다.`;
 
     const messages: AgentMessage[] = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt },
     ];
 
-    await this.chatWithTools(messages);
-    await this.loadReferenceData(true);
-  }
+    const output = await this.chatWithTools(messages, this.readOnlyTools);
 
-  // Phase 1: Prewriting (구상)
-  async executePrewriting(): Promise<PhaseResult> {
-    await this.loadReferenceData(true);
-    const prompt = this.buildPrewritingPrompt();
-    this.debug(`Prewriting prompt ready: ${this.preview(prompt)}`);
-    const messages: AgentMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: prompt },
-    ];
+    // 구상 단계에서 언급된 캐릭터/장소 references 업데이트
+    try {
+      const jsonMatch = output.match(/```json\s*([\s\S]*?)\s*```/);
+      const jsonString = jsonMatch ? jsonMatch[1] : output;
+      const result = JSON.parse(jsonString);
 
-    const output = await this.chatWithTools(messages);
-    this.debug(`Prewriting output captured: ${this.preview(output)}`);
+      if (result.mentionedCharacters?.length > 0) {
+        await this.updateCharacterReferences(result.mentionedCharacters);
+      }
+      if (result.mentionedPlaces?.length > 0) {
+        await this.updatePlaceReferences(result.mentionedPlaces);
+      }
 
-    this.context.draft.prewriting = output;
+      this.logContextChange('prewriting', {
+        references: this.context.references,
+      });
+    } catch (error) {
+      this.debug(`Failed to parse prewriting result: ${error instanceof Error ? error.message : 'Unknown'}`);
+    }
 
     return {
       success: true,
@@ -695,20 +274,51 @@ export class NovelWritingAgent {
     };
   }
 
-  // Phase 2: Drafting (작성)
+  // Phase 2: Drafting - 초고 작성
   async executeDrafting(): Promise<PhaseResult> {
-    await this.loadReferenceData(true);
-    const prompt = this.buildDraftingPrompt();
-    this.debug(`Drafting prompt ready: ${this.preview(prompt)}`);
+    const characterInfo = this.context.references.characters
+      .map((c) => `- ${c.name}: ${c.personality || ''}, ${c.appearance || ''} (위치: ${c.current_place || '알 수 없음'})`).join('\n') || '(없음)';
+    
+    const placeInfo = this.context.references.places
+      .map((p) => `- ${p.name}: ${p.current_situation || ''} (좌표: ${p.latitude}, ${p.longitude})`).join('\n') || '(없음)';
+
+    const prompt = `
+# Drafting Phase
+
+## 지금까지의 이야기
+${this.context.previousStory || '(첫 에피소드)'}
+
+## Context에 있는 캐릭터 정보
+${characterInfo}
+
+## Context에 있는 장소 정보
+${placeInfo}
+
+## 작업
+약 5000자 분량의 챕터를 작성하세요.
+
+**중요**:
+- Context에 있는 캐릭터/장소 정보를 **반드시** 활용하세요
+- 새로운 장소를 언급할 경우 google.places.describe와 weather.openMeteo.lookup으로 실제 정보를 조회하고 반영하세요
+- 실제 서울의 지리와 날씨를 감각적으로 묘사하세요
+- 작성한 내용을 그대로 출력하세요 (JSON 형식 아님)
+`;
+
+    const systemPrompt = `${SYSTEM_PROMPT}
+
+# 작성 단계 안내
+이 단계에서는 실제 챕터를 작성합니다.
+Context에 있는 캐릭터와 장소 정보를 적극 활용하세요.
+필요시 조회 도구(google.places.describe, weather.openMeteo.lookup 등)를 사용할 수 있습니다.`;
+
     const messages: AgentMessage[] = [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt },
       { role: 'user', content: prompt },
     ];
 
-    const output = await this.chatWithTools(messages);
-    this.debug(`Draft output captured: ${this.preview(output)}`);
-
-    this.context.draft.content = output;
+    const output = await this.chatWithTools(messages, this.readOnlyTools);
+    this.context.content = output;
+    this.logContextChange('drafting', { content: output });
 
     return {
       success: true,
@@ -718,36 +328,268 @@ export class NovelWritingAgent {
     };
   }
 
-  // Phase 3: Revision (수정)
+  // Phase 3: Revision - 퇴고
   async executeRevision(): Promise<PhaseResult> {
-    await this.loadReferenceData(true);
-    const prompt = this.buildRevisionPrompt();
-    this.debug(`Revision prompt ready: ${this.preview(prompt)}`);
+    const characterInfo = this.context.references.characters
+      .map((c) => `- ${c.name}`).join(', ') || '(없음)';
+    
+    const placeInfo = this.context.references.places
+      .map((p) => `- ${p.name}`).join(', ') || '(없음)';
+
+    const prompt = `
+# Revision Phase
+
+## 작성한 초고
+${this.context.content}
+
+## Context에 등장한 캐릭터
+${characterInfo}
+
+## Context에 등장한 장소
+${placeInfo}
+
+## 작업
+초고를 검토하고 다음을 개선하세요:
+- 문장의 리듬과 흐름
+- 불필요한 반복 제거
+- 감정 표현의 선명함
+- 장면 전환의 자연스러움
+- Context에 있는 캐릭터/장소 정보의 일관성 확인
+
+**중요**: 
+- 수정된 최종본을 그대로 출력하세요
+- 초고에서 언급된 모든 캐릭터와 장소 이름을 추출하여 마지막에 JSON으로 추가:
+
+\`\`\`json
+{
+  "mentionedCharacters": ["실제로 등장한 캐릭터 이름들"],
+  "mentionedPlaces": ["실제로 등장한 장소 이름들"]
+}
+\`\`\`
+`;
+
     const messages: AgentMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: prompt },
     ];
 
-    const output = await this.chatWithTools(messages);
-    this.debug(`Revision output captured: ${this.preview(output)}`);
+    const output = await this.chatWithTools(messages, this.readOnlyTools);
+
+    // JSON 부분 분리
+    const jsonMatch = output.match(/```json\s*([\s\S]*?)\s*```/);
+    let finalContent = output;
+    
+    if (jsonMatch) {
+      // JSON 앞부분이 실제 content
+      finalContent = output.substring(0, jsonMatch.index).trim();
+      
+      try {
+        const result = JSON.parse(jsonMatch[1]);
+        
+        // 최종 revision에서 언급된 캐릭터/장소로 references 업데이트
+        if (result.mentionedCharacters?.length > 0) {
+          await this.updateCharacterReferences(result.mentionedCharacters);
+        }
+        if (result.mentionedPlaces?.length > 0) {
+          await this.updatePlaceReferences(result.mentionedPlaces);
+        }
+      } catch (error) {
+        this.debug(`Failed to parse revision metadata: ${error instanceof Error ? error.message : 'Unknown'}`);
+      }
+    }
+
+    this.context.content = finalContent;
+
+    // summary 생성
+    this.context.summary = finalContent.replace(/\s+/g, ' ').slice(0, 280);
+    this.logContextChange('revision', {
+      content: finalContent,
+      summary: this.context.summary,
+      references: this.context.references,
+    });
 
     return {
       success: true,
       phase: 'revision',
-      output,
+      output: finalContent,
       context: this.context,
     };
   }
 
+  // Phase 4: Finalize - DB 저장을 위한 데이터 정리
+  async executeFinalize(): Promise<{
+    episode: { id: string; content: string; summary: string };
+    characters: Array<Record<string, unknown>>;
+    places: Array<Record<string, unknown>>;
+  }> {
+    const toolSchemaInfo = this.buildToolSchemaPrompt();
+
+    // Context에 있는 캐릭터/장소 정보 포맷
+    const contextCharacters = this.context.references.characters.map((c) => ({
+      name: c.name,
+      isExisting: true,
+      currentData: {
+        personality: c.personality,
+        current_place: c.current_place,
+        current_status: c.current_status,
+      },
+    }));
+
+    const contextPlaces = this.context.references.places.map((p) => ({
+      name: p.name,
+      isExisting: true,
+      currentData: {
+        current_situation: p.current_situation,
+        latitude: p.latitude,
+        longitude: p.longitude,
+      },
+    }));
+
+    const prompt = `
+# Finalize Phase
+
+## 작성된 최종 콘텐츠
+${this.context.content}
+
+## Context에 등장한 캐릭터 (기존 DB 데이터)
+${contextCharacters.map((c) => `- ${c.name} (기존 데이터 있음)`).join('\n') || '(없음)'}
+
+## Context에 등장한 장소 (기존 DB 데이터)
+${contextPlaces.map((p) => `- ${p.name} (기존 데이터 있음)`).join('\n') || '(없음)'}
+
+${toolSchemaInfo}
+
+## 작업
+최종 콘텐츠를 분석하여 DB 저장에 필요한 데이터를 JSON 형식으로 정리하세요.
+
+**중요 규칙**:
+1. **Context에 있는 캐릭터/장소**: 변경된 정보만 포함 (위치 변경, 상태 변경 등)
+2. **Context에 없는 새 캐릭터/장소**: 모든 필드를 채워서 포함
+3. **필수 필드 확인**: 스키마 정보를 참고하여 필수 필드 누락 금지
+
+\`\`\`json
+{
+  "characters": [
+    {
+      "name": "캐릭터명",
+      "personality": "성격",
+      "background": "배경",
+      "appearance": "외형",
+      "current_place": "현재 위치",
+      "relationships": [],
+      "major_events": [],
+      "character_traits": [],
+      "current_status": "현재 상태",
+      "last_mentioned_episode_id": "${this.context.id}"
+    }
+  ],
+  "places": [
+    {
+      "name": "장소명",
+      "current_situation": "현재 상황",
+      "latitude": 37.5,
+      "longitude": 127.0,
+      "last_weather_condition": "",
+      "last_weather_weather_condition": "",
+      "last_mentioned_episode_id": "${this.context.id}"
+    }
+  ]
+}
+\`\`\`
+`;
+
+    const messages: AgentMessage[] = [
+      { role: 'system', content: RECONCILIATION_PROMPT },
+      { role: 'user', content: prompt },
+    ];
+
+    const output = await this.chatWithTools(messages, this.readOnlyTools);
+
+    try {
+      const jsonMatch = output.match(/```json\s*([\s\S]*?)\s*```/);
+      const jsonString = jsonMatch ? jsonMatch[1] : output;
+      const result = JSON.parse(jsonString);
+
+      if (IS_DEV) {
+        console.info(`[${this.context.id ?? 'unknown'}] 📋 Finalize result:`, {
+          charactersCount: result.characters?.length || 0,
+          placesCount: result.places?.length || 0,
+        });
+      }
+
+      return {
+        episode: {
+          id: this.context.id || '',
+          content: this.context.content,
+          summary: this.context.summary,
+        },
+        characters: result.characters || [],
+        places: result.places || [],
+      };
+    } catch (error) {
+      this.debug(
+        `Failed to parse finalize result: ${error instanceof Error ? error.message : 'Unknown'}`,
+      );
+
+      return {
+        episode: {
+          id: this.context.id || '',
+          content: this.context.content,
+          summary: this.context.summary,
+        },
+        characters: [],
+        places: [],
+      };
+    }
+  }
+
+  // MCP 도구 스키마 정보 추출
+  private buildToolSchemaPrompt(): string {
+    const createTools = this.allTools
+      .filter(
+        (decl) =>
+          decl.name &&
+          (decl.name === 'characters_create' || decl.name === 'places_create'),
+      )
+      .map((decl) => {
+        const schema = decl.parametersJsonSchema as
+          | { required?: string[] }
+          | undefined;
+
+        return {
+          name: decl.name!.replace(/_/g, '.'),
+          description: decl.description ?? '',
+          requiredFields: schema?.required ?? [],
+        };
+      });
+
+    if (createTools.length === 0) return '';
+
+    const sections = createTools.map((tool) => {
+      const fields = tool.requiredFields.join(', ');
+
+      return `## ${tool.name}
+${tool.description}
+
+필수 필드: ${fields}`;
+    });
+
+    return ['# 데이터 스키마 정보', '', ...sections].join('\n');
+  }
+
   // Gemini API 호출 with Function Calling
-  private async chatWithTools(messages: AgentMessage[]): Promise<string> {
+  private async chatWithTools(
+    messages: AgentMessage[],
+    tools: FunctionDeclaration[],
+  ): Promise<string> {
     const maxIterations = 20;
     const initialConversation: Content[] = messages
       .filter((message) => message.role !== 'system')
       .map((message) => ({
-        role: message.role === 'system' ? 'user' : message.role,
+        role: message.role === 'user' ? 'user' : 'model',
         parts: [{ text: message.content }],
       }));
+
     const systemInstruction = messages
       .filter((message) => message.role === 'system')
       .map((message) => message.content)
@@ -763,12 +605,6 @@ export class NovelWritingAgent {
 
     while (iterations < maxIterations) {
       iterations++;
-      const lastContent = conversation[conversation.length - 1];
-      if (lastContent?.role === 'user') {
-        this.debug(
-          `Iteration ${iterations} user message: ${this.preview(lastContent.parts)}`,
-        );
-      }
 
       const response = await this.client.models.generateContent({
         model: GEMINI_MODEL,
@@ -777,11 +613,9 @@ export class NovelWritingAgent {
           systemInstruction:
             systemInstruction.length > 0 ? systemInstruction : undefined,
           tools:
-            this.functionDeclarations.length > 0
-              ? [{ functionDeclarations: this.functionDeclarations }]
-              : undefined,
+            tools.length > 0 ? [{ functionDeclarations: tools }] : undefined,
           toolConfig:
-            this.functionDeclarations.length > 0
+            tools.length > 0
               ? {
                   functionCallingConfig: {
                     mode: FunctionCallingConfigMode.AUTO,
@@ -796,58 +630,74 @@ export class NovelWritingAgent {
 
       if (candidateContent) {
         conversation.push(candidateContent);
-        this.debug(
-          `Iteration ${iterations} model response: ${this.preview(candidateContent.parts)}`,
-        );
       }
 
       if (functionCalls.length === 0) {
         const finalText =
-          response.text ?? this.partsToPlainText(candidateContent?.parts);
-        this.debug(
-          `Iteration ${iterations} final response: ${this.preview(finalText)}`,
-        );
+          response.text ??
+          (candidateContent?.parts
+            ?.map((part) => (typeof part.text === 'string' ? part.text : ''))
+            .join('')
+            .trim() ||
+            '');
 
         return finalText;
       }
 
+      // 도구 호출 처리
       for (const call of functionCalls) {
-        const currentToolName = call.name ?? 'unknown';
+        const toolName = call.name ?? 'unknown';
         const args = call.args ?? {};
 
-        try {
-          const serializedArgs = JSON.stringify(args);
-          this.debug(
-            `Calling tool ${currentToolName} with args ${this.preview(serializedArgs)}`,
-          );
-        } catch {
-          this.debug(
-            `Calling tool ${currentToolName} with args (serialization failed)`,
-          );
+        if (IS_DEV) {
+          console.info(`[${this.context.id ?? 'unknown'}] 🔧 MCP Tool Call:`, {
+            tool: toolName,
+            args,
+            reason: 'AI determined this tool is needed for the current task',
+          });
         }
+
+        this.debug(`Calling tool ${toolName}`);
 
         let responsePayload: Record<string, unknown>;
         try {
-          const result = await executeMcpTool(currentToolName, args);
-          this.debug(`Tool ${currentToolName} result: ${this.preview(result)}`);
-          this.recordToolSideEffects(currentToolName, args, result);
+          const result = await executeMcpTool(toolName, args);
           responsePayload = this.normalizeToolResponse(result);
+
+          if (IS_DEV) {
+            console.info(
+              `[${this.context.id ?? 'unknown'}] ✅ MCP Tool Success:`,
+              {
+                tool: toolName,
+                resultLength: JSON.stringify(responsePayload).length,
+              },
+            );
+          }
         } catch (error) {
           const messageText =
             error instanceof Error ? error.message : 'Unknown error';
-          this.debug(
-            `Tool ${currentToolName} error: ${this.preview(messageText)}`,
-          );
+          this.debug(`Tool ${toolName} error: ${messageText}`);
           responsePayload = { error: messageText };
+
+          if (IS_DEV) {
+            console.error(
+              `[${this.context.id ?? 'unknown'}] ❌ MCP Tool Error:`,
+              {
+                tool: toolName,
+                error: messageText,
+              },
+            );
+          }
         }
 
         const functionResponsePart = createPartFromFunctionResponse(
-          call.id ?? currentToolName,
-          currentToolName,
+          call.id ?? toolName,
+          toolName,
           responsePayload,
         );
+
         conversation.push({
-          role: 'user',
+          role: 'function',
           parts: [functionResponsePart],
         });
       }
@@ -856,116 +706,19 @@ export class NovelWritingAgent {
     throw new Error('Max iterations reached in chatWithTools');
   }
 
-  // Prewriting 프롬프트 생성
-  private buildPrewritingPrompt(): string {
-    const parts = [
-      '# Phase 1: Prewriting (구상 단계)',
-      '',
-      `현재 시간: ${this.context.currentTime.toISOString()}`,
-      `챕터 ID: ${this.context.chapterId}`,
-      '',
-    ];
+  private normalizeToolResponse(result: string): Record<string, unknown> {
+    try {
+      const parsed = JSON.parse(result);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      if (Array.isArray(parsed)) {
+        return { result: parsed };
+      }
 
-    if (this.context.previousChapter) {
-      parts.push('## 이전 챕터 정보');
-      parts.push(`ID: ${this.context.previousChapter.id}`);
-      if (this.context.previousChapter.summary) {
-        parts.push(`요약: ${this.context.previousChapter.summary}`);
-      }
-      if (this.context.previousChapter.content) {
-        parts.push('');
-        parts.push('### 이전 챕터 내용 (일부)');
-        const preview = this.context.previousChapter.content.slice(0, 1000);
-        parts.push(
-          preview.length === this.context.previousChapter.content.length
-            ? preview
-            : `${preview}...`,
-        );
-        parts.push('');
-      } else {
-        parts.push('');
-      }
-    } else {
-      parts.push('## 첫 번째 챕터입니다');
-      parts.push(
-        '평화로운 일상이 좀비 바이러스로 인해 갑작스럽게 변화하는 과정을 묘사해야합니다.',
-      );
-      parts.push('');
+      return { result: parsed };
+    } catch {
+      return { result };
     }
-
-    parts.push('## 작업 내용');
-    parts.push('다음 챕터를 구상하기 위해:');
-    parts.push('');
-    parts.push('1. 이전 챕터 분석 (필요시 episodes.get 사용)');
-    parts.push('2. 주요 캐릭터의 현재 위치 파악');
-    parts.push(
-      '3. 배경으로 사용할 실제 위치의 위도·경도를 결정하고 기록 (예: 서울 시청 37.5665, 126.9780)',
-    );
-    parts.push(
-      '4. 결정한 좌표로 weather.openMeteo.lookup을 호출해 체감 묘사에 활용할 요소 정리',
-    );
-    parts.push('5. 시간 경과와 이동 가능 거리 계산');
-    parts.push('6. 다음 챕터의 주요 사건과 전개 방향 결정');
-    parts.push(
-      '7. 필요한 새 캐릭터나 장소 구상 및 등장 시 MCP write 도구 사용 계획 수립',
-    );
-    parts.push('');
-    parts.push(
-      '구상한 내용을 자세히 설명하되 선택한 좌표(lat/lon)와 weather.openMeteo.lookup 결과는 감각적으로 요약하고 수치 나열은 피해주세요. 새 캐릭터나 장소를 확정하면 해당 정보를 DB에 저장하기 위해 `characters.create`, `places.create` 호출 전략도 메모하세요.',
-    );
-
-    return parts.join('\n');
-  }
-
-  // Drafting 프롬프트 생성
-  private buildDraftingPrompt(): string {
-    const parts = [
-      '# Phase 2: Drafting (본문 작성 단계)',
-      '',
-      '## Prewriting 구상 내용',
-      this.context.draft.prewriting || '(구상 내용 없음)',
-      '',
-      '## 작업 내용',
-      `위 구상을 바탕으로 정확히 ${NOVEL_CONFIG.writingStyle.targetLength}자 분량의 소설 본문을 작성하세요.`,
-      '',
-      '### 작성 지침',
-      '- 시간과 날씨는 인물의 체감, 환경 변화, 대사 등으로 녹이고 숫자·단위 나열은 금지',
-      '- 긴장감과 몰입도를 유지하는 전개',
-      '- 필요시 새로운 캐릭터나 장소를 자유롭게 추가',
-      '- 이전 챕터와의 자연스러운 연결',
-      '- 새롭게 등장시키는 캐릭터·장소는 본문에 묘사',
-      '- 생생한 묘사와 현실적인 디테일',
-      '- 장소 묘사를 강화하기 위해 필요하면 google.places.describe 도구로 정보를 수집하고 본문에 자연스럽게 반영',
-      '',
-      '작성된 본문만 출력해주세요. (다른 설명 없이)',
-    ];
-
-    return parts.join('\n');
-  }
-
-  // Revision 프롬프트 생성
-  private buildRevisionPrompt(): string {
-    const parts = [
-      '# Phase 3: Revision (최종 검토 및 수정 단계)',
-      '',
-      '## 작성된 초고',
-      this.context.draft.content || '(초고 없음)',
-      '',
-      '## 작업 내용',
-      '위 초고를 최종 검토하고 수정하세요:',
-      '',
-      '### 검토 항목',
-      '1. 오탈자 및 문법 오류 수정',
-      '2. 이전 챕터와의 일관성 확인',
-      '3. 캐릭터 행동의 자연스러움 검토',
-      '4. 시간·날씨 표현이 감각적으로 유지되는지, 수치 나열이 없는지 확인',
-      '5. 묘사와 대화의 질 향상',
-      `6. 정확히 ${NOVEL_CONFIG.writingStyle.targetLength}자 분량 조정`,
-      '7. 전체적인 흐름과 긴장감 확인',
-      '',
-      '최종 수정된 본문만 출력해주세요. (다른 설명 없이)',
-    ];
-
-    return parts.join('\n');
   }
 }

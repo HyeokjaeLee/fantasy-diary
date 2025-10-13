@@ -63,6 +63,36 @@ type McpTool = {
 };
 
 // MCP tools를 Gemini function schema로 변환
+// 도구 이름 변환: MCP(dot) ↔ Gemini(underscore)
+const toGeminiToolName = (mcpName: string): string => mcpName.replace(/\./g, '_');
+const toMcpToolName = (geminiName: string): string =>
+  geminiName.replace(/_/g, '.');
+
+// 도구 이름으로 MCP 엔드포인트 결정
+function getMcpEndpoint(mcpToolName: string): string {
+  const [category, action] = mcpToolName.split('.');
+
+  // 카테고리 기반 라우팅
+  const categoryEndpoints: Record<string, string> = {
+    weather: 'weather',
+    google: 'google',
+    geo: 'geo',
+  };
+
+  if (categoryEndpoints[category]) {
+    return categoryEndpoints[category];
+  }
+
+  // DB 관련 도구는 action에 따라 read/write 분기
+  if (['episodes', 'characters', 'places'].includes(category)) {
+    const writeActions = ['create', 'update', 'delete'];
+
+    return writeActions.includes(action) ? 'write-db' : 'read-db';
+  }
+
+  throw new Error(`Unknown tool category: ${category}`);
+}
+
 export async function getMcpFunctionDeclarations(): Promise<
   FunctionDeclaration[]
 > {
@@ -85,7 +115,7 @@ export async function getMcpFunctionDeclarations(): Promise<
   // Gemini function schema로 변환
   return allTools.map((tool) => {
     const declaration: FunctionDeclaration = {
-      name: tool.name.replace(/\./g, '_'),
+      name: toGeminiToolName(tool.name),
       description: tool.description ?? '',
     };
     if (tool.inputSchema) {
@@ -101,26 +131,9 @@ export async function executeMcpTool(
   toolName: string,
   args: unknown,
 ): Promise<string> {
-  // Convert underscores back to dots for MCP tool names
-  const mcpToolName = toolName.replace(/_/g, '.');
-  const [category] = mcpToolName.split('.');
-
-  // 카테고리별 엔드포인트 매핑
-  let endpoint: string;
-  if (category === 'weather') {
-    endpoint = 'weather';
-  } else if (category === 'google') {
-    endpoint = 'google';
-  } else if (category === 'geo') {
-    endpoint = 'geo';
-  } else if (['episodes', 'characters', 'places'].includes(category)) {
-    // action에 따라 read-db vs write-db 결정
-    const action = mcpToolName.split('.')[1];
-    const isWrite = ['create', 'update', 'delete'].includes(action);
-    endpoint = isWrite ? 'write-db' : 'read-db';
-  } else {
-    throw new Error(`Unknown tool category: ${category}`);
-  }
+  // Gemini 도구 이름을 MCP 형식으로 변환
+  const mcpToolName = toMcpToolName(toolName);
+  const endpoint = getMcpEndpoint(mcpToolName);
 
   // MCP tools/call 실행
   const result = await callInternalMcp(endpoint, 'tools/call', {
