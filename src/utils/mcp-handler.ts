@@ -1,24 +1,15 @@
+import type { JsonRpcRequest, Tool } from '@/types/mcp';
 import {
   JsonRpcErrorCode,
   JsonRpcErrorMessage,
-  type JsonRpcRequest,
   zCallToolParams,
   zJsonRpcRequest,
 } from '@/types/mcp';
 import { NextResponse } from '@/utils/next-response';
 
-export interface ToolDef<TInput = unknown, TOutput = unknown> {
-  name: string;
-  description?: string;
-  inputSchema: object;
-  usageGuidelines?: string[];
-  allowedPhases?: string[];
-  handler: (args: TInput) => Promise<TOutput>;
-}
-
 interface HandleMcpRequestOptions {
   req: Request;
-  tools: Array<ToolDef<unknown, unknown>>;
+  tools: Tool[];
   includeUsageInfo?: boolean;
 }
 

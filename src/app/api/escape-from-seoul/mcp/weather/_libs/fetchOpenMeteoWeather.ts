@@ -1,8 +1,6 @@
 import ky from 'ky';
 import { z } from 'zod';
 
-const OPEN_METEO_BASE_URL = 'https://api.open-meteo.com/v1/forecast';
-
 const CURRENT_PARAMS = [
   'temperature_2m',
   'apparent_temperature',
@@ -90,23 +88,30 @@ const zOpenMeteoResponse = z.object({
 
 export type OpenMeteoResponse = z.infer<typeof zOpenMeteoResponse>;
 
-export type WeatherUnitsSystem = 'METRIC' | 'IMPERIAL';
-
-interface FetchWeatherOptions {
-  latitude: number;
-  longitude: number;
-  unitsSystem?: WeatherUnitsSystem;
-  hourCount?: number;
-  dayCount?: number;
-  timezone?: string;
+export enum WeatherUnitsSystem {
+  METRIC = 'METRIC',
+  IMPERIAL = 'IMPERIAL',
 }
+
+export const zWeatherLookupArgs = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  unitsSystem: z.enum(WeatherUnitsSystem).optional(),
+  hourCount: z.number().int().min(1).max(168).optional(),
+  dayCount: z.number().int().min(1).max(16).optional(),
+  timezone: z.string().min(1).max(40).optional(),
+});
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(Math.max(value, min), max);
 
 const degToCardinal = (degrees?: number | null) => {
   if (typeof degrees !== 'number' || Number.isNaN(degrees)) return null;
-  const directions = [
+
+  const normalized = ((degrees % 360) + 360) % 360;
+  const index = Math.round(normalized / 22.5) % 16;
+
+  return [
     'N',
     'NNE',
     'NE',
@@ -123,11 +128,7 @@ const degToCardinal = (degrees?: number | null) => {
     'WNW',
     'NW',
     'NNW',
-  ];
-  const normalized = ((degrees % 360) + 360) % 360;
-  const index = Math.round(normalized / 22.5) % 16;
-
-  return directions[index];
+  ][index];
 };
 
 const WMO_CODE_DESCRIPTION: Record<number, string> = {
@@ -184,9 +185,9 @@ const formatDistanceKm = (meters?: number | null) => {
 };
 
 export const fetchWeatherFromOpenMeteo = async (
-  options: FetchWeatherOptions,
+  options: z.infer<typeof zWeatherLookupArgs>,
 ) => {
-  const unitsSystem = options.unitsSystem ?? 'METRIC';
+  const unitsSystem = options.unitsSystem ?? WeatherUnitsSystem.METRIC;
   const hourCount = options.hourCount ?? 24;
   const dayCount = options.dayCount ?? 7;
   const forecastDays = clamp(
@@ -205,7 +206,7 @@ export const fetchWeatherFromOpenMeteo = async (
     daily: DAILY_PARAMS.join(','),
   });
 
-  if (unitsSystem === 'IMPERIAL') {
+  if (unitsSystem === WeatherUnitsSystem.IMPERIAL) {
     params.set('temperature_unit', 'fahrenheit');
     params.set('wind_speed_unit', 'mph');
     params.set('precipitation_unit', 'inch');
@@ -215,7 +216,9 @@ export const fetchWeatherFromOpenMeteo = async (
     params.set('precipitation_unit', 'mm');
   }
 
-  const response = await ky.get(`${OPEN_METEO_BASE_URL}?${params.toString()}`);
+  const response = await ky.get(
+    `https://api.open-meteo.com/v1/forecast?${params.toString()}`,
+  );
   const json = await response.json();
   const parsed = zOpenMeteoResponse.parse(json);
 
@@ -250,8 +253,9 @@ export const fetchWeatherFromOpenMeteo = async (
   const hourly = parsed.hourly;
   const hourlyForecast =
     hourly && hourly.time.length > 0
-      ? hourly.time.slice(0, clamp(hourCount, 1, hourly.time.length)).map(
-          (_, index) => ({
+      ? hourly.time
+          .slice(0, clamp(hourCount, 1, hourly.time.length))
+          .map((_, index) => ({
             time: hourly.time[index],
             temperature: formatTemperature(
               hourly.temperature_2m?.[index],
@@ -274,15 +278,15 @@ export const fetchWeatherFromOpenMeteo = async (
             },
             humidity: hourly.relative_humidity_2m?.[index] ?? null,
             visibilityKm: formatDistanceKm(hourly.visibility?.[index]),
-          }),
-        )
+          }))
       : [];
 
   const daily = parsed.daily;
   const dailyForecast =
     daily && daily.time.length > 0
-      ? daily.time.slice(0, clamp(dayCount, 1, daily.time.length)).map(
-          (_, index) => ({
+      ? daily.time
+          .slice(0, clamp(dayCount, 1, daily.time.length))
+          .map((_, index) => ({
             date: daily.time[index],
             weatherCode: daily.weather_code?.[index] ?? null,
             weatherDescription: describeWeatherCode(
@@ -308,8 +312,7 @@ export const fetchWeatherFromOpenMeteo = async (
               daily.precipitation_probability_max?.[index] ?? null,
             sunrise: daily.sunrise?.[index] ?? null,
             sunset: daily.sunset?.[index] ?? null,
-          }),
-        )
+          }))
       : [];
 
   return {

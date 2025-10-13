@@ -28,8 +28,12 @@ export interface Tool<
         type: JSONSchema6TypeName;
         minimum?: number;
         maximum?: number;
+        minLength?: number;
+        maxLength?: number;
+        default?: unknown;
         description: string;
         items?: { type: JSONSchema6TypeName };
+        enum?: string[];
       }
     >;
   };

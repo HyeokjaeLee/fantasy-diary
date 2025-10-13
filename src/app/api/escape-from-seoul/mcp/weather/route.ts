@@ -1,21 +1,14 @@
-import { z } from 'zod';
+import type z from 'zod';
 
 import {
   fetchWeatherFromOpenMeteo,
-  type WeatherUnitsSystem,
+  WeatherUnitsSystem,
+  zWeatherLookupArgs,
 } from '@/app/api/escape-from-seoul/mcp/weather/_libs/fetchOpenMeteoWeather';
-import { handleMcpRequest, type ToolDef } from '@/utils';
+import type { Tool } from '@/types/mcp';
+import { handleMcpRequest } from '@/utils';
 
 export const runtime = 'edge';
-
-const zWeatherLookupArgs = z.object({
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-  unitsSystem: z.enum(['METRIC', 'IMPERIAL']).optional(),
-  hourCount: z.number().int().min(1).max(168).optional(),
-  dayCount: z.number().int().min(1).max(16).optional(),
-  timezone: z.string().min(1).max(40).optional(),
-});
 
 const formatSpeed = (value: number | null, unitsSystem: WeatherUnitsSystem) => {
   if (value === null || Number.isNaN(value)) return null;
@@ -34,7 +27,7 @@ const formatPrecipitation = (
   return `${value.toFixed(unitsSystem === 'IMPERIAL' ? 2 : 1)} ${unit}`;
 };
 
-const tools: Array<ToolDef<unknown, unknown>> = [
+const tools: Tool<keyof z.infer<typeof zWeatherLookupArgs>>[] = [
   {
     name: 'weather.openMeteo.lookup',
     description:
@@ -57,7 +50,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         },
         unitsSystem: {
           type: 'string',
-          enum: ['METRIC', 'IMPERIAL'],
+          enum: [WeatherUnitsSystem.METRIC, WeatherUnitsSystem.IMPERIAL],
           description: '단위계 (기본값: METRIC)',
         },
         hourCount: {
@@ -83,7 +76,8 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     handler: async (rawArgs: unknown) => {
       const args = zWeatherLookupArgs.parse(rawArgs);
 
-      const unitsSystem: WeatherUnitsSystem = args.unitsSystem ?? 'METRIC';
+      const unitsSystem: WeatherUnitsSystem =
+        args.unitsSystem ?? WeatherUnitsSystem.METRIC;
       const weather = await fetchWeatherFromOpenMeteo({
         latitude: args.latitude,
         longitude: args.longitude,
