@@ -10,41 +10,6 @@ import type { Tool } from '@/types/mcp';
 
 import { configureSupabaseRest } from './configureSupabaseRest';
 
-const normalizeString = (value: unknown, fallback = ''): string => {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-
-    return trimmed.length > 0 ? trimmed : fallback;
-  }
-
-  return fallback;
-};
-
-const toStringArray = (value: unknown): string[] => {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  const deduped = new Set<string>();
-  for (const item of value) {
-    if (typeof item !== 'string') continue;
-    const trimmed = item.trim();
-    if (trimmed.length > 0) {
-      deduped.add(trimmed);
-    }
-  }
-
-  return Array.from(deduped);
-};
-
-const stripUndefined = <T extends Record<string, unknown>>(
-  input: T,
-): Partial<T> => {
-  const entries = Object.entries(input).filter(([, val]) => val !== undefined);
-
-  return Object.fromEntries(entries) as Partial<T>;
-};
-
 const SUMMARY_MAX_VALIDATION = '최대 500자까지 입력 가능합니다.';
 const CONTENT_MAX_VALIDATION = '최대 5,000자까지 입력 가능합니다.';
 const ID_VALIDATION = '형식은 YYYYMMDDHHmm 이어야 합니다.';
@@ -79,27 +44,6 @@ const zEpisodesCreate = zEscapeFromSeoulEpisodes.extend({
 const zEpisodesUpdate = zEpisodesCreate.partial().extend({
   id: zEpisodesCreate.shape.id,
 });
-
-const buildEpisodeUpdate = (
-  input: z.infer<typeof zEpisodesUpdate>,
-): Partial<EscapeFromSeoulEpisodes> => {
-  const payload: Partial<EscapeFromSeoulEpisodes> = {};
-  if (typeof input.content === 'string') {
-    payload.content = input.content;
-  }
-  if (input.summary !== undefined) {
-    const summary = normalizeString(input.summary, '');
-    payload.summary = summary.length > 0 ? summary : undefined;
-  }
-  if (input.characters !== undefined) {
-    payload.characters = toStringArray(input.characters);
-  }
-  if (input.places !== undefined) {
-    payload.places = toStringArray(input.places);
-  }
-
-  return stripUndefined(payload);
-};
 
 type EscapeFromSeoulEpisodesTool = Tool<keyof EscapeFromSeoulEpisodes>;
 
@@ -168,16 +112,16 @@ export const episodeTools: EscapeFromSeoulEpisodesTool[] = [
       additionalProperties: true,
     },
     handler: async (rawArgs: unknown) => {
-      const parsed = zEpisodesUpdate.parse(rawArgs);
-      const body = buildEpisodeUpdate(parsed);
+      const { id, ...body } = zEpisodesUpdate.parse(rawArgs);
+
       if (Object.keys(body).length === 0) {
         return { ok: true };
       }
       configureSupabaseRest();
       const { error } = await patchEscapeFromSeoulEpisodes({
         headers: { Prefer: 'return=minimal' },
-        query: { id: `eq.${parsed.id}` },
-        body: parsed,
+        query: { id },
+        body,
       });
 
       if (error) throw new Error(String(error));

@@ -1,10 +1,8 @@
 import { client } from '@supabase-api/client.gen';
 import {
   patchEscapeFromSeoulCharacters,
-  patchEscapeFromSeoulEpisodes,
   patchEscapeFromSeoulPlaces,
   postEscapeFromSeoulCharacters,
-  postEscapeFromSeoulEpisodes,
   postEscapeFromSeoulPlaces,
 } from '@supabase-api/sdk.gen';
 import type {
@@ -22,6 +20,8 @@ import type { z } from 'zod';
 import { ENV } from '@/env';
 import type { Tool } from '@/types/mcp';
 import { handleMcpRequest } from '@/utils';
+
+import { episodeTools } from './_libs/episodeTools';
 
 const configureSupabaseRest = () => {
   const url = (ENV.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
@@ -88,8 +88,6 @@ const stripUndefined = <T extends Record<string, unknown>>(
   return Object.fromEntries(entries) as Partial<T>;
 };
 
-const zEpisodesUpdate = zEscapeFromSeoulEpisodes.partial();
-
 const zCharactersUpdate = zEscapeFromSeoulCharacters.partial();
 
 const zPlacesUpdate = zEscapeFromSeoulPlaces
@@ -98,41 +96,6 @@ const zPlacesUpdate = zEscapeFromSeoulPlaces
     name: zEscapeFromSeoulPlaces.shape.name,
   })
   .passthrough();
-
-const buildEpisodeCreate = (
-  input: z.infer<typeof zEscapeFromSeoulEpisodes>,
-): EscapeFromSeoulEpisodes => {
-  const summary = normalizeString(input.summary, '');
-
-  return {
-    id: input.id,
-    content: input.content,
-    summary: summary.length > 0 ? summary : undefined,
-    characters: toStringArray(input.characters),
-    places: toStringArray(input.places),
-  };
-};
-
-const buildEpisodeUpdate = (
-  input: z.infer<typeof zEpisodesUpdate>,
-): Partial<EscapeFromSeoulEpisodes> => {
-  const payload: Partial<EscapeFromSeoulEpisodes> = {};
-  if (typeof input.content === 'string') {
-    payload.content = input.content;
-  }
-  if (input.summary !== undefined) {
-    const summary = normalizeString(input.summary, '');
-    payload.summary = summary.length > 0 ? summary : undefined;
-  }
-  if (input.characters !== undefined) {
-    payload.characters = toStringArray(input.characters);
-  }
-  if (input.places !== undefined) {
-    payload.places = toStringArray(input.places);
-  }
-
-  return stripUndefined(payload);
-};
 
 const buildCharacterCreate = (
   input: z.infer<typeof zEscapeFromSeoulCharacters>,
@@ -256,102 +219,8 @@ const buildPlaceUpdate = (
   return stripUndefined(payload);
 };
 
-const episodeTools: Tool<keyof EscapeFromSeoulEpisodes>[] = [
-  {
-    name: 'episodes.create',
-    description:
-      '새로운 에피소드를 생성합니다. 작성한 본문과 요약, 등장한 캐릭터·장소 목록을 저장할 때 사용하세요.',
-    inputSchema: {
-      type: 'object',
-      required: ['id', 'content'],
-      properties: {
-        id: {
-          type: 'string',
-          description: '에피소드 ID (예: YYYYMMDDHHmm 형태)',
-        },
-        content: {
-          type: 'string',
-          description: '에피소드 본문 (마크다운 허용)',
-        },
-        summary: {
-          type: 'string',
-          description: '간단한 요약 (선택 사항)',
-        },
-        characters: {
-          type: 'array',
-          description: '에피소드에 등장한 캐릭터 이름 목록',
-          items: { type: 'string' },
-        },
-        places: {
-          type: 'array',
-          description: '에피소드에 등장한 장소 이름 목록',
-          items: { type: 'string' },
-        },
-      },
-      additionalProperties: true,
-    },
-    handler: async (raw: unknown) => {
-      const parsed = zEscapeFromSeoulEpisodes.parse(raw);
-      const body = buildEpisodeCreate(parsed);
-      configureSupabaseRest();
-      const { data, error } = await postEscapeFromSeoulEpisodes({
-        headers: { Prefer: 'return=representation' },
-        query: { select: '*' },
-        body,
-      });
-      if (error) throw new Error(String(error));
-
-      return data;
-    },
-  },
-  {
-    name: 'episodes.update',
-    description:
-      '기존 에피소드를 수정합니다. 본문, 요약 또는 등장 인물/장소 목록을 업데이트할 때 사용하세요.',
-    inputSchema: {
-      type: 'object',
-      required: ['id'],
-      properties: {
-        id: { type: 'string', description: '수정할 에피소드 ID' },
-        content: { type: 'string', description: '새로운 본문 (선택 사항)' },
-        summary: { type: 'string', description: '새로운 요약 (선택 사항)' },
-        characters: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '최신 캐릭터 목록 (선택 사항)',
-        },
-        places: {
-          type: 'array',
-          items: { type: 'string' },
-          description: '최신 장소 목록 (선택 사항)',
-        },
-      },
-      additionalProperties: true,
-    },
-    handler: async (rawArgs: unknown) => {
-      const parsed = zEpisodesUpdate.parse(rawArgs);
-      const body = buildEpisodeUpdate(parsed);
-      if (Object.keys(body).length === 0) {
-        return { ok: true };
-      }
-      configureSupabaseRest();
-      const payload = {
-        id: parsed.id,
-        ...body,
-      } satisfies Partial<EscapeFromSeoulEpisodes> & { id: string };
-      const { error } = await patchEscapeFromSeoulEpisodes({
-        headers: { Prefer: 'return=minimal' },
-        query: { id: `eq.${parsed.id}` },
-        body: payload,
-      });
-      if (error) throw new Error(String(error));
-
-      return { ok: true };
-    },
-  },
-];
-
 const tools: Tool[] = [
+  ...episodeTools,
   {
     name: 'characters.create',
     description:
