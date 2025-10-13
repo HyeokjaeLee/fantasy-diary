@@ -6,7 +6,8 @@ import {
   type GooglePlacesSearchResponse,
   searchPlacesByText,
 } from '@/app/api/escape-from-seoul/mcp/google/_libs/fetchGooglePlaces';
-import { handleMcpRequest, type ToolDef } from '@/utils';
+import type { Tool } from '@/types/mcp';
+import { handleMcpRequest } from '@/utils';
 
 export const runtime = 'edge';
 
@@ -96,13 +97,14 @@ const collectReviews = (place: GooglePlace) => {
   }));
 };
 
-const tools: Array<ToolDef<unknown, unknown>> = [
+const tools: Tool[] = [
   {
     name: 'google.places.describe',
     description:
       'Google Places API 텍스트 검색/상세 조회를 조합해 장소의 특징, 연락처, 운영 정보, 후기 등 스토리텔링에 유용한 정보를 제공합니다.',
     inputSchema: {
       type: 'object',
+      required: [],
       properties: {
         textQuery: {
           type: 'string',
@@ -175,9 +177,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       const searchSummaries =
         searchResponse?.places?.map((place) => describePlace(place)) ?? [];
 
-      const detailedSummary = detailPlace
-        ? describePlace(detailPlace)
-        : null;
+      const detailedSummary = detailPlace ? describePlace(detailPlace) : null;
 
       const reviews =
         detailPlace && args.includeReviews ? collectReviews(detailPlace) : [];
