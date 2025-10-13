@@ -1,8 +1,5 @@
 import { client } from '@supabase-api/client.gen';
 import {
-  deleteEscapeFromSeoulCharacters,
-  deleteEscapeFromSeoulEpisodes,
-  deleteEscapeFromSeoulPlaces,
   patchEscapeFromSeoulCharacters,
   patchEscapeFromSeoulEpisodes,
   patchEscapeFromSeoulPlaces,
@@ -17,12 +14,14 @@ import type {
 } from '@supabase-api/types.gen';
 import {
   zEscapeFromSeoulCharacters,
+  zEscapeFromSeoulEpisodes,
   zEscapeFromSeoulPlaces,
 } from '@supabase-api/zod.gen';
-import { z } from 'zod';
+import type { z } from 'zod';
 
 import { ENV } from '@/env';
-import { handleMcpRequest, type ToolDef } from '@/utils';
+import type { Tool } from '@/types/mcp';
+import { handleMcpRequest } from '@/utils';
 
 const configureSupabaseRest = () => {
   const url = (ENV.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
@@ -89,54 +88,9 @@ const stripUndefined = <T extends Record<string, unknown>>(
   return Object.fromEntries(entries) as Partial<T>;
 };
 
-const zEpisodesCreate = z
-  .object({
-    id: z.string().min(1),
-    content: z.string().min(1),
-    summary: z.string().optional(),
-    characters: z.array(z.string()).optional(),
-    places: z.array(z.string()).optional(),
-  })
-  .passthrough();
+const zEpisodesUpdate = zEscapeFromSeoulEpisodes.partial();
 
-const zEpisodesUpdate = z
-  .object({
-    id: z.string().min(1),
-    content: z.string().optional(),
-    summary: z.string().optional(),
-    characters: z.array(z.string()).optional(),
-    places: z.array(z.string()).optional(),
-  })
-  .passthrough();
-
-const zEpisodesDelete = z.object({
-  id: z.string().min(1),
-});
-
-const zCharactersCreate = zEscapeFromSeoulCharacters
-  .partial()
-  .extend({
-    name: zEscapeFromSeoulCharacters.shape.name,
-  })
-  .passthrough();
-
-const zCharactersUpdate = zEscapeFromSeoulCharacters
-  .partial()
-  .extend({
-    name: zEscapeFromSeoulCharacters.shape.name,
-  })
-  .passthrough();
-
-const zCharactersDelete = z.object({
-  name: zEscapeFromSeoulCharacters.shape.name,
-});
-
-const zPlacesCreate = zEscapeFromSeoulPlaces
-  .partial()
-  .extend({
-    name: zEscapeFromSeoulPlaces.shape.name,
-  })
-  .passthrough();
+const zCharactersUpdate = zEscapeFromSeoulCharacters.partial();
 
 const zPlacesUpdate = zEscapeFromSeoulPlaces
   .partial()
@@ -145,12 +99,8 @@ const zPlacesUpdate = zEscapeFromSeoulPlaces
   })
   .passthrough();
 
-const zPlacesDelete = z.object({
-  name: zEscapeFromSeoulPlaces.shape.name,
-});
-
 const buildEpisodeCreate = (
-  input: z.infer<typeof zEpisodesCreate>,
+  input: z.infer<typeof zEscapeFromSeoulEpisodes>,
 ): EscapeFromSeoulEpisodes => {
   const summary = normalizeString(input.summary, '');
 
@@ -185,7 +135,7 @@ const buildEpisodeUpdate = (
 };
 
 const buildCharacterCreate = (
-  input: z.infer<typeof zCharactersCreate>,
+  input: z.infer<typeof zEscapeFromSeoulCharacters>,
 ): EscapeFromSeoulCharacters => {
   const nowIso = new Date().toISOString();
   const majorEvents = toStringArray(input.major_events);
@@ -249,7 +199,7 @@ const buildCharacterUpdate = (
 };
 
 const buildPlaceCreate = (
-  input: z.infer<typeof zPlacesCreate>,
+  input: z.infer<typeof zEscapeFromSeoulPlaces>,
 ): EscapeFromSeoulPlaces => {
   const nowIso = new Date().toISOString();
   const latitude = toNumber(input.latitude) ?? 0;
@@ -306,7 +256,7 @@ const buildPlaceUpdate = (
   return stripUndefined(payload);
 };
 
-const tools: Array<ToolDef<unknown, unknown>> = [
+const episodeTools: Tool<keyof EscapeFromSeoulEpisodes>[] = [
   {
     name: 'episodes.create',
     description:
@@ -341,7 +291,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: true,
     },
     handler: async (raw: unknown) => {
-      const parsed = zEpisodesCreate.parse(raw);
+      const parsed = zEscapeFromSeoulEpisodes.parse(raw);
       const body = buildEpisodeCreate(parsed);
       configureSupabaseRest();
       const { data, error } = await postEscapeFromSeoulEpisodes({
@@ -392,36 +342,16 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       const { error } = await patchEscapeFromSeoulEpisodes({
         headers: { Prefer: 'return=minimal' },
         query: { id: `eq.${parsed.id}` },
-        body: payload as EscapeFromSeoulEpisodes,
+        body: payload,
       });
       if (error) throw new Error(String(error));
 
       return { ok: true };
     },
   },
-  {
-    name: 'episodes.delete',
-    description:
-      '에피소드를 삭제합니다. 잘못 생성되었거나 더 이상 필요하지 않은 에피소드를 제거할 때 사용하세요.',
-    inputSchema: {
-      type: 'object',
-      required: ['id'],
-      properties: {
-        id: { type: 'string', description: '삭제할 에피소드 ID' },
-      },
-      additionalProperties: false,
-    },
-    handler: async (rawArgs: unknown) => {
-      const parsed = zEpisodesDelete.parse(rawArgs);
-      configureSupabaseRest();
-      const { error } = await deleteEscapeFromSeoulEpisodes({
-        query: { id: `eq.${parsed.id}` },
-      });
-      if (error) throw new Error(String(error));
+];
 
-      return { ok: true };
-    },
-  },
+const tools: Tool[] = [
   {
     name: 'characters.create',
     description:
@@ -439,7 +369,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: true,
     },
     handler: async (raw: unknown) => {
-      const parsed = zCharactersCreate.parse(raw);
+      const parsed = zEscapeFromSeoulCharacters.parse(raw);
       const body = buildCharacterCreate(parsed);
       configureSupabaseRest();
       const { data, error } = await postEscapeFromSeoulCharacters({
@@ -486,29 +416,6 @@ const tools: Array<ToolDef<unknown, unknown>> = [
     },
   },
   {
-    name: 'characters.delete',
-    description:
-      '캐릭터를 삭제합니다. 더 이상 스토리에 등장하지 않거나 중복된 기록을 정리할 때 사용하세요.',
-    inputSchema: {
-      type: 'object',
-      required: ['name'],
-      properties: {
-        name: { type: 'string', description: '삭제할 캐릭터 이름' },
-      },
-      additionalProperties: false,
-    },
-    handler: async (rawArgs: unknown) => {
-      const parsed = zCharactersDelete.parse(rawArgs);
-      configureSupabaseRest();
-      const { error } = await deleteEscapeFromSeoulCharacters({
-        query: { name: `eq.${parsed.name}` },
-      });
-      if (error) throw new Error(String(error));
-
-      return { ok: true };
-    },
-  },
-  {
     name: 'places.create',
     description:
       '새로운 장소를 생성합니다. 배경이 되는 위치와 관련 정보를 등록할 때 사용하세요.',
@@ -521,7 +428,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
       additionalProperties: true,
     },
     handler: async (raw: unknown) => {
-      const parsed = zPlacesCreate.parse(raw);
+      const parsed = zEscapeFromSeoulPlaces.parse(raw);
       const body = buildPlaceCreate(parsed);
       configureSupabaseRest();
       const { data, error } = await postEscapeFromSeoulPlaces({
@@ -561,29 +468,6 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         headers: { Prefer: 'return=minimal' },
         query: { name: `eq.${parsed.name}` },
         body: payload as EscapeFromSeoulPlaces,
-      });
-      if (error) throw new Error(String(error));
-
-      return { ok: true };
-    },
-  },
-  {
-    name: 'places.delete',
-    description:
-      '장소를 삭제합니다. 더 이상 필요하지 않거나 잘못된 장소를 정리할 때 사용하세요.',
-    inputSchema: {
-      type: 'object',
-      required: ['name'],
-      properties: {
-        name: { type: 'string', description: '삭제할 장소 이름' },
-      },
-      additionalProperties: false,
-    },
-    handler: async (rawArgs: unknown) => {
-      const parsed = zPlacesDelete.parse(rawArgs);
-      configureSupabaseRest();
-      const { error } = await deleteEscapeFromSeoulPlaces({
-        query: { name: `eq.${parsed.name}` },
       });
       if (error) throw new Error(String(error));
 

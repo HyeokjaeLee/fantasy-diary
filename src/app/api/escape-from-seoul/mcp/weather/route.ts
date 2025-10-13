@@ -103,9 +103,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         hintList.push(`기온 ${weather.current.temperature.formatted}`);
       }
       if (weather.current.apparentTemperature?.formatted) {
-        hintList.push(
-          `체감 ${weather.current.apparentTemperature.formatted}`,
-        );
+        hintList.push(`체감 ${weather.current.apparentTemperature.formatted}`);
       }
       if (
         typeof weather.current.humidity === 'number' &&
@@ -133,7 +131,10 @@ const tools: Array<ToolDef<unknown, unknown>> = [
           (typeof weather.current.wind.direction === 'number'
             ? `${weather.current.wind.direction}°`
             : null);
-        const gust = formatSpeed(weather.current.wind.gust, weather.unitsSystem);
+        const gust = formatSpeed(
+          weather.current.wind.gust,
+          weather.unitsSystem,
+        );
         const segments = [
           direction ? `${direction} 풍` : null,
           `풍속 ${windSpeed}`,
@@ -145,9 +146,7 @@ const tools: Array<ToolDef<unknown, unknown>> = [
         typeof weather.current.visibilityKm === 'number' &&
         !Number.isNaN(weather.current.visibilityKm)
       ) {
-        hintList.push(
-          `가시거리 ${weather.current.visibilityKm.toFixed(1)}km`,
-        );
+        hintList.push(`가시거리 ${weather.current.visibilityKm.toFixed(1)}km`);
       }
 
       const narrativePrompts = [

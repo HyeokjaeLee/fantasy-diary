@@ -1,4 +1,4 @@
-import type { JSONSchema4 } from 'json-schema';
+import type { JSONSchema6TypeName } from 'json-schema';
 import { z } from 'zod';
 
 // JSON-RPC base types
@@ -11,35 +11,31 @@ export interface JsonRpcRequest<TParams = unknown> {
   params?: TParams;
 }
 
-// MCP Tool types (subset aligned with spec)
-export interface Tool {
+export interface Tool<
+  TInputSchema extends string = string,
+  TInput = unknown,
+  TOutput = unknown,
+> {
   name: string;
-  title?: string;
   description?: string;
-  inputSchema: JSONSchema4;
-  outputSchema?: JSONSchema4;
-  annotations?: Record<string, unknown>;
-}
-
-export interface ListToolsResult {
-  tools: Tool[];
-  nextCursor?: string;
-  _meta?: Record<string, unknown>;
-  [k: string]: unknown;
-}
-
-// tools/call request params per spec
-export interface CallToolRequestParams {
-  name: string;
-  arguments?: Record<string, unknown>;
-}
-
-// tools/call result shape (minimum)
-export interface CallToolResult {
-  content: Array<
-    { type: 'text'; text: string } | { type: string; [k: string]: unknown }
-  >;
-  structuredContent?: unknown;
+  inputSchema: {
+    additionalProperties: boolean;
+    type: JSONSchema6TypeName;
+    required: TInputSchema[];
+    properties: Record<
+      TInputSchema,
+      {
+        type: JSONSchema6TypeName;
+        minimum?: number;
+        maximum?: number;
+        description: string;
+        items?: { type: JSONSchema6TypeName };
+      }
+    >;
+  };
+  usageGuidelines?: string[];
+  allowedPhases?: string[];
+  handler: (args: TInput) => Promise<TOutput>;
 }
 
 // Zod schemas for runtime validation
