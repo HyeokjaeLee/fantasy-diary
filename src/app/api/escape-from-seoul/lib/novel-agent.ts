@@ -9,6 +9,7 @@ import {
 
 import { IS_DEV } from '@/constants';
 import { ENV } from '@/env';
+import { GeminiModel } from '@/types/gemini';
 
 import type { ChapterContext, PhaseResult } from '../types/novel';
 import { executeMcpTool } from './mcp-client';
@@ -18,8 +19,6 @@ const RECONCILIATION_PROMPT = `
 당신은 "Escape from Seoul" 프로젝트의 데이터 정리 담당자입니다.
 작성된 콘텐츠를 분석하여 DB 저장에 필요한 정보를 정확히 추출하세요.
 `.trim();
-
-const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 
 type AgentMessage = {
   role: 'system' | 'user';
@@ -638,7 +637,7 @@ ${tool.description}
       iterations++;
 
       const response = await this.client.models.generateContent({
-        model: GEMINI_MODEL,
+        model: IS_DEV ? GeminiModel.FLASH_LITE : GeminiModel.PRO,
         contents: conversation,
         config: {
           systemInstruction:
