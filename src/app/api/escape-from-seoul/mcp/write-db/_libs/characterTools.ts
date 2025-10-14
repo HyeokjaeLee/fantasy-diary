@@ -94,7 +94,7 @@ export const characterTools: EscapeFromSeoulCharactersTool[] = [
         body,
       });
 
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(JSON.stringify(error));
 
       return data;
     },
@@ -135,7 +135,7 @@ export const characterTools: EscapeFromSeoulCharactersTool[] = [
         body,
       });
 
-      if (error) throw new Error(String(error));
+      if (error) throw new Error(JSON.stringify(error));
 
       return { ok: true };
     },

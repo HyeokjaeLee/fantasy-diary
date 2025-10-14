@@ -64,7 +64,7 @@ export async function POST(req: Request) {
             headers: { Prefer: 'count=none' },
             query: { order: 'id.desc', limit: String(limit) },
           });
-          if (error) throw new Error(String(error));
+          if (error) throw new Error(JSON.stringify(error));
 
           return Array.isArray(data) ? data : [];
         },
@@ -91,7 +91,7 @@ export async function POST(req: Request) {
             headers: { Prefer: 'count=none' },
             query: { id: `eq.${id}`, limit: '1' },
           });
-          if (error) throw new Error(String(error));
+          if (error) throw new Error(JSON.stringify(error));
 
           return Array.isArray(data) ? (data[0] ?? null) : null;
         },
@@ -121,7 +121,7 @@ export async function POST(req: Request) {
             headers: { Prefer: 'count=none' },
             query: { order: 'name.asc', limit: String(limit) },
           });
-          if (error) throw new Error(String(error));
+          if (error) throw new Error(JSON.stringify(error));
 
           return Array.isArray(data) ? data : [];
         },
@@ -149,7 +149,7 @@ export async function POST(req: Request) {
             headers: { Prefer: 'count=none' },
             query: { name: `eq.${name}`, limit: '1' },
           });
-          if (error) throw new Error(String(error));
+          if (error) throw new Error(JSON.stringify(error));
 
           return Array.isArray(data) ? (data[0] ?? null) : null;
         },
@@ -179,7 +179,7 @@ export async function POST(req: Request) {
             headers: { Prefer: 'count=none' },
             query: { order: 'name.asc', limit: String(limit) },
           });
-          if (error) throw new Error(String(error));
+          if (error) throw new Error(JSON.stringify(error));
 
           return Array.isArray(data) ? data : [];
         },
@@ -207,7 +207,7 @@ export async function POST(req: Request) {
             headers: { Prefer: 'count=none' },
             query: { name: `eq.${name}`, limit: '1' },
           });
-          if (error) throw new Error(String(error));
+          if (error) throw new Error(JSON.stringify(error));
 
           return Array.isArray(data) ? (data[0] ?? null) : null;
         },

@@ -44,7 +44,7 @@ export const story = router({
       if (error) {
         throw new TRPCError({
           code: 'INTERNAL_SERVER_ERROR',
-          message: String(error),
+          message: JSON.stringify(error),
         });
       }
 

@@ -238,7 +238,7 @@ export const searchPlacesByText = async (options: SearchPlacesOptions) => {
 
     if (error instanceof Error) throw error;
 
-    throw new Error(`Google Places 검색 실패: ${String(error)}`);
+    throw new Error(`Google Places 검색 실패: ${JSON.stringify(error)}`);
   }
 
   const contentType = response.headers.get('content-type') ?? '';
@@ -297,7 +297,7 @@ export const fetchPlaceDetails = async (options: GetPlaceDetailsOptions) => {
 
     if (error instanceof Error) throw error;
 
-    throw new Error(`Google Places 상세조회 실패: ${String(error)}`);
+    throw new Error(`Google Places 상세조회 실패: ${JSON.stringify(error)}`);
   }
 
   const contentType = response.headers.get('content-type') ?? '';
@@ -371,7 +371,7 @@ export const searchPlacesNearby = async (options: SearchNearbyOptions) => {
 
     if (error instanceof Error) throw error;
 
-    throw new Error(`Google Places 주변검색 실패: ${String(error)}`);
+    throw new Error(`Google Places 주변검색 실패: ${JSON.stringify(error)}`);
   }
 
   const contentType = response.headers.get('content-type') ?? '';
