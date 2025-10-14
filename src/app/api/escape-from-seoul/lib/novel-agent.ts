@@ -19,7 +19,7 @@ const RECONCILIATION_PROMPT = `
 작성된 콘텐츠를 분석하여 DB 저장에 필요한 정보를 정확히 추출하세요.
 `.trim();
 
-const GEMINI_MODEL = 'gemini-2.5-pro';
+const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 
 type AgentMessage = {
   role: 'system' | 'user';
@@ -88,11 +88,15 @@ export class NovelWritingAgent {
         if (characters.length > 0) {
           this.context.references.characters.push(characters[0]);
           if (IS_DEV) {
-            console.info(`[${this.context.id ?? 'unknown'}] 👤 Added character to context: ${name}`);
+            console.info(
+              `[${this.context.id ?? 'unknown'}] 👤 Added character to context: ${name}`,
+            );
           }
         }
       } catch (error) {
-        this.debug(`Failed to fetch character ${name}: ${error instanceof Error ? error.message : 'Unknown'}`);
+        this.debug(
+          `Failed to fetch character ${name}: ${error instanceof Error ? error.message : 'Unknown'}`,
+        );
       }
     }
   }
@@ -113,11 +117,15 @@ export class NovelWritingAgent {
         if (places.length > 0) {
           this.context.references.places.push(places[0]);
           if (IS_DEV) {
-            console.info(`[${this.context.id ?? 'unknown'}] 📍 Added place to context: ${name}`);
+            console.info(
+              `[${this.context.id ?? 'unknown'}] 📍 Added place to context: ${name}`,
+            );
           }
         }
       } catch (error) {
-        this.debug(`Failed to fetch place ${name}: ${error instanceof Error ? error.message : 'Unknown'}`);
+        this.debug(
+          `Failed to fetch place ${name}: ${error instanceof Error ? error.message : 'Unknown'}`,
+        );
       }
     }
   }
@@ -191,11 +199,18 @@ export class NovelWritingAgent {
 
   // Phase 1: Prewriting - 구상
   async executePrewriting(): Promise<PhaseResult> {
-    const characterInfo = this.context.references.characters
-      .map((c) => `- ${c.name}: ${c.personality || ''} (현재: ${c.current_place || ''})`).join('\n') || '(없음)';
-    
-    const placeInfo = this.context.references.places
-      .map((p) => `- ${p.name}: ${p.current_situation || ''}`).join('\n') || '(없음)';
+    const characterInfo =
+      this.context.references.characters
+        .map(
+          (c) =>
+            `- ${c.name}: ${c.personality || ''} (현재: ${c.current_place || ''})`,
+        )
+        .join('\n') || '(없음)';
+
+    const placeInfo =
+      this.context.references.places
+        .map((p) => `- ${p.name}: ${p.current_situation || ''}`)
+        .join('\n') || '(없음)';
 
     const prompt = `
 # Prewriting Phase
@@ -263,7 +278,9 @@ ${placeInfo}
         references: this.context.references,
       });
     } catch (error) {
-      this.debug(`Failed to parse prewriting result: ${error instanceof Error ? error.message : 'Unknown'}`);
+      this.debug(
+        `Failed to parse prewriting result: ${error instanceof Error ? error.message : 'Unknown'}`,
+      );
     }
 
     return {
@@ -276,11 +293,21 @@ ${placeInfo}
 
   // Phase 2: Drafting - 초고 작성
   async executeDrafting(): Promise<PhaseResult> {
-    const characterInfo = this.context.references.characters
-      .map((c) => `- ${c.name}: ${c.personality || ''}, ${c.appearance || ''} (위치: ${c.current_place || '알 수 없음'})`).join('\n') || '(없음)';
-    
-    const placeInfo = this.context.references.places
-      .map((p) => `- ${p.name}: ${p.current_situation || ''} (좌표: ${p.latitude}, ${p.longitude})`).join('\n') || '(없음)';
+    const characterInfo =
+      this.context.references.characters
+        .map(
+          (c) =>
+            `- ${c.name}: ${c.personality || ''}, ${c.appearance || ''} (위치: ${c.current_place || '알 수 없음'})`,
+        )
+        .join('\n') || '(없음)';
+
+    const placeInfo =
+      this.context.references.places
+        .map(
+          (p) =>
+            `- ${p.name}: ${p.current_situation || ''} (좌표: ${p.latitude}, ${p.longitude})`,
+        )
+        .join('\n') || '(없음)';
 
     const prompt = `
 # Drafting Phase
@@ -330,11 +357,13 @@ Context에 있는 캐릭터와 장소 정보를 적극 활용하세요.
 
   // Phase 3: Revision - 퇴고
   async executeRevision(): Promise<PhaseResult> {
-    const characterInfo = this.context.references.characters
-      .map((c) => `- ${c.name}`).join(', ') || '(없음)';
-    
-    const placeInfo = this.context.references.places
-      .map((p) => `- ${p.name}`).join(', ') || '(없음)';
+    const characterInfo =
+      this.context.references.characters.map((c) => `- ${c.name}`).join(', ') ||
+      '(없음)';
+
+    const placeInfo =
+      this.context.references.places.map((p) => `- ${p.name}`).join(', ') ||
+      '(없음)';
 
     const prompt = `
 # Revision Phase
@@ -378,14 +407,14 @@ ${placeInfo}
     // JSON 부분 분리
     const jsonMatch = output.match(/```json\s*([\s\S]*?)\s*```/);
     let finalContent = output;
-    
+
     if (jsonMatch) {
       // JSON 앞부분이 실제 content
       finalContent = output.substring(0, jsonMatch.index).trim();
-      
+
       try {
         const result = JSON.parse(jsonMatch[1]);
-        
+
         // 최종 revision에서 언급된 캐릭터/장소로 references 업데이트
         if (result.mentionedCharacters?.length > 0) {
           await this.updateCharacterReferences(result.mentionedCharacters);
@@ -394,7 +423,9 @@ ${placeInfo}
           await this.updatePlaceReferences(result.mentionedPlaces);
         }
       } catch (error) {
-        this.debug(`Failed to parse revision metadata: ${error instanceof Error ? error.message : 'Unknown'}`);
+        this.debug(
+          `Failed to parse revision metadata: ${error instanceof Error ? error.message : 'Unknown'}`,
+        );
       }
     }
 

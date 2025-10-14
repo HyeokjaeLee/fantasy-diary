@@ -26,8 +26,8 @@ export const handleMcpRequest = async ({
 
     if (request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
       return NextResponse.jsonRpcFail({
-        code: JsonRpcErrorCode.InvalidRequest,
-        message: JsonRpcErrorMessage.InvalidRequest,
+        code: JsonRpcErrorCode.INVALID_REQUEST,
+        message: JsonRpcErrorMessage.INVALID_REQUEST,
         id: request.id ?? null,
       });
     }
@@ -59,8 +59,8 @@ export const handleMcpRequest = async ({
       const parsed = zCallToolParams.safeParse(request.params ?? {});
       if (!parsed.success || !parsed.data.name) {
         return NextResponse.jsonRpcFail({
-          code: JsonRpcErrorCode.InvalidParams,
-          message: JsonRpcErrorMessage.InvalidParams,
+          code: JsonRpcErrorCode.INVALID_PARAMS,
+          message: JsonRpcErrorMessage.INVALID_PARAMS,
           id: request.id,
         });
       }
@@ -68,8 +68,8 @@ export const handleMcpRequest = async ({
       const tool = tools.find((t) => t.name === parsed.data.name);
       if (!tool) {
         return NextResponse.jsonRpcFail({
-          code: JsonRpcErrorCode.ToolNotFound,
-          message: JsonRpcErrorMessage.ToolNotFound,
+          code: JsonRpcErrorCode.TOOL_NOT_FOUND,
+          message: JsonRpcErrorMessage.TOOL_NOT_FOUND,
           id: request.id,
         });
       }
@@ -85,13 +85,13 @@ export const handleMcpRequest = async ({
     }
 
     return NextResponse.jsonRpcFail({
-      code: JsonRpcErrorCode.MethodNotFound,
-      message: JsonRpcErrorMessage.MethodNotFound,
+      code: JsonRpcErrorCode.METHOD_NOT_FOUND,
+      message: JsonRpcErrorMessage.METHOD_NOT_FOUND,
       id: request.id,
     });
   } catch (e) {
     const errorMessage =
-      e instanceof Error ? e.message : JsonRpcErrorMessage.UnknownError;
+      e instanceof Error ? e.message : JsonRpcErrorMessage.UNKNOWN_ERROR;
     const errorData =
       e instanceof Error
         ? { stack: e.stack ?? null, name: e.name ?? null }
@@ -103,7 +103,7 @@ export const handleMcpRequest = async ({
 
     return NextResponse.jsonRpcFail({
       id: body?.id ?? null,
-      code: JsonRpcErrorCode.UnknownError,
+      code: JsonRpcErrorCode.UNKNOWN_ERROR,
       message: errorMessage,
       data: errorData,
     });
