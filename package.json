@@ -38,6 +38,7 @@
     "next": "15.4.6",
     "next-intl": "^4.3.12",
     "next-typesafe-url": "^5.1.8",
+    "raw-loader": "^4.0.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "superjson": "2.2.2",

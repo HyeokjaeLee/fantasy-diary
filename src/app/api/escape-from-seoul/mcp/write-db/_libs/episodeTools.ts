@@ -12,34 +12,17 @@ import { configureSupabaseRest } from './configureSupabaseRest';
 
 const SUMMARY_MAX_VALIDATION = '최대 500자까지 입력 가능합니다.';
 const CONTENT_MAX_VALIDATION = '최대 5,000자까지 입력 가능합니다.';
-const ID_VALIDATION = '형식은 YYYYMMDDHHmm 이어야 합니다.';
+const ID_VALIDATION = '형식은 ISO 8601 날짜/시간 문자열이어야 합니다.';
 
 const zEpisodesCreate = zEscapeFromSeoulEpisodes.extend({
   summary: z.string().max(500, SUMMARY_MAX_VALIDATION),
   content: z.string().max(5_000, CONTENT_MAX_VALIDATION),
-  id: z
-    .string()
-    .regex(/^\d{12}$/, ID_VALIDATION)
-    .refine((val) => {
-      const year = Number(val.slice(0, 4));
-      const month = Number(val.slice(4, 6));
-      const day = Number(val.slice(6, 8));
-      const hour = Number(val.slice(8, 10));
-      const minute = Number(val.slice(10, 12));
+  id: z.string().refine((val) => {
+    // ISO 8601 형식 검증
+    const date = new Date(val);
 
-      // 유효한 날짜/시간인지 체크
-      const date = new Date(year, month - 1, day, hour, minute);
-
-      return (
-        date.getFullYear() === year &&
-        date.getMonth() === month - 1 &&
-        date.getDate() === day &&
-        hour >= 0 &&
-        hour <= 23 &&
-        minute >= 0 &&
-        minute <= 59
-      );
-    }, '유효한 날짜/시간이 아닙니다.'),
+    return !Number.isNaN(date.getTime());
+  }, ID_VALIDATION),
 });
 const zEpisodesUpdate = zEpisodesCreate.partial().extend({
   id: zEpisodesCreate.shape.id,
@@ -52,7 +35,7 @@ const properties: Tool<
 >['inputSchema']['properties'] = {
   id: {
     type: 'string',
-    description: `에피소드 ID, 작성 시간이면서 ${ID_VALIDATION}`,
+    description: `에피소드 ID (ISO 8601 형식의 날짜/시간 문자열)`,
   },
   content: {
     type: 'string',

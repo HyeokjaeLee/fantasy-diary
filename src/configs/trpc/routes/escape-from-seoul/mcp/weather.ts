@@ -1,14 +1,13 @@
-import type z from 'zod';
+import { TRPCError } from '@trpc/server';
+import { z } from 'zod';
 
 import {
   fetchWeatherFromOpenMeteo,
   WeatherUnitsSystem,
   zWeatherLookupArgs,
 } from '@/app/api/escape-from-seoul/mcp/weather/_libs/fetchOpenMeteoWeather';
+import { publicProcedure, router } from '@/configs/trpc/settings';
 import type { Tool } from '@/types/mcp';
-import { handleMcpRequest } from '@/utils';
-
-export const runtime = 'edge';
 
 const formatSpeed = (value: number | null, unitsSystem: WeatherUnitsSystem) => {
   if (value === null || Number.isNaN(value)) return null;
@@ -27,7 +26,7 @@ const formatPrecipitation = (
   return `${value.toFixed(unitsSystem === 'IMPERIAL' ? 2 : 1)} ${unit}`;
 };
 
-const tools: Tool<keyof z.infer<typeof zWeatherLookupArgs>>[] = [
+export const weatherTools: Tool<keyof z.infer<typeof zWeatherLookupArgs>>[] = [
   {
     name: 'weather.openMeteo.lookup',
     description:
@@ -172,6 +171,35 @@ const tools: Tool<keyof z.infer<typeof zWeatherLookupArgs>>[] = [
   },
 ];
 
-export async function POST(req: Request) {
-  return handleMcpRequest({ req, tools });
-}
+const sanitizeTool = (tool: Tool): Omit<Tool, 'handler'> => {
+  const { handler: _handler, ...rest } = tool;
+  void _handler;
+
+  return rest;
+};
+
+const zCallInput = z.object({
+  name: z.string().min(1),
+  arguments: z.unknown().optional(),
+});
+
+export const escapeFromSeoulWeatherRouter = router({
+  list: publicProcedure.query(() =>
+    weatherTools.map((tool) => sanitizeTool(tool)),
+  ),
+  execute: publicProcedure.input(zCallInput).mutation(async ({ input }) => {
+    const tool = weatherTools.find(
+      (candidate) => candidate.name === input.name,
+    );
+    if (!tool) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: `weather tool ${input.name} not found`,
+      });
+    }
+
+    const result = await tool.handler(input.arguments ?? {});
+
+    return JSON.stringify(result);
+  }),
+});

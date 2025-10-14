@@ -2,12 +2,15 @@
 
 import { useState } from 'react';
 
-import type { WriteChapterResponse } from '@/app/api/escape-from-seoul/types/novel';
+import type { WriteChapterResponse } from '@/app/api/escape-from-seoul/_types/novel';
+import { trpc } from '@/configs/trpc';
 
 export default function NovelTestPage() {
   const [datetime, setDatetime] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<WriteChapterResponse | null>(null);
+  const generateChapterMutation =
+    trpc.escapeFromSeoul.generateChapter.useMutation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,13 +25,9 @@ export default function NovelTestPage() {
     setResult(null);
 
     try {
-      const response = await fetch('/api/escape-from-seoul', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentTime: datetime }),
+      const data = await generateChapterMutation.mutateAsync({
+        currentTime: datetime,
       });
-
-      const data: WriteChapterResponse = await response.json();
       setResult(data);
     } catch (error) {
       setResult({
@@ -45,6 +44,7 @@ export default function NovelTestPage() {
       });
     } finally {
       setLoading(false);
+      generateChapterMutation.reset();
     }
   };
 

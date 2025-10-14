@@ -11,9 +11,9 @@ import { IS_DEV } from '@/constants';
 import { ENV } from '@/env';
 import { GeminiModel } from '@/types/gemini';
 
-import type { ChapterContext, PhaseResult } from '../types/novel';
+import SYSTEM_PROMPT from '../_prompt/system-prompt.md';
+import type { ChapterContext, PhaseResult } from '../_types/novel';
 import { executeMcpTool } from './mcp-client';
-import { SYSTEM_PROMPT } from './novel-config';
 
 const RECONCILIATION_PROMPT = `
 당신은 "Escape from Seoul" 프로젝트의 데이터 정리 담당자입니다.
@@ -247,14 +247,14 @@ ${placeInfo}
 \`\`\`
 `;
 
-    const systemPrompt = `${SYSTEM_PROMPT}
+    const content = `${SYSTEM_PROMPT}
 
 # 구상 단계 안내
 이 단계에서는 다음 챕터의 전개를 자유롭게 구상합니다.
 필요시 characters.list, places.list, google.places.describe, weather.openMeteo.lookup 등 조회 도구를 사용할 수 있습니다.`;
 
     const messages: AgentMessage[] = [
-      { role: 'system', content: systemPrompt },
+      { role: 'system', content },
       { role: 'user', content: prompt },
     ];
 
