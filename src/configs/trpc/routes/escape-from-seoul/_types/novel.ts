@@ -2,6 +2,13 @@ import type {
   EscapeFromSeoulCharacters,
   EscapeFromSeoulPlaces,
 } from '@supabase-api/types.gen';
+import type {
+  zPatchEscapeFromSeoulCharactersData,
+  zPatchEscapeFromSeoulPlacesData,
+  zPostEscapeFromSeoulCharactersData,
+  zPostEscapeFromSeoulPlacesData,
+} from '@supabase-api/zod.gen';
+import type z from 'zod';
 
 export interface CharacterDraft extends Partial<EscapeFromSeoulCharacters> {
   externalId?: string;
@@ -14,14 +21,29 @@ export interface PlaceDraft extends Partial<EscapeFromSeoulPlaces> {
 // 챕터 작성 중 상태 관리
 export interface ChapterContext {
   id?: string;
-  /** 이전 이야기 내용 정리 */
   previousStory?: string;
-  references: {
-    characters: EscapeFromSeoulCharacters[];
-    places: EscapeFromSeoulPlaces[];
-  };
   content: string;
   summary: string;
+  places: {
+    new: Exclude<
+      z.infer<typeof zPostEscapeFromSeoulPlacesData>['body'],
+      undefined
+    >[];
+    updated: Exclude<
+      z.infer<typeof zPatchEscapeFromSeoulPlacesData>['body'],
+      undefined
+    >[];
+  };
+  characters: {
+    new: Exclude<
+      z.infer<typeof zPostEscapeFromSeoulCharactersData>['body'],
+      undefined
+    >[];
+    updated: Exclude<
+      z.infer<typeof zPatchEscapeFromSeoulCharactersData>['body'],
+      undefined
+    >[];
+  };
 }
 
 // Phase 실행 결과

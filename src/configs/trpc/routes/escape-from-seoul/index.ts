@@ -1,3 +1,8 @@
+import {
+  postEscapeFromSeoulCharacters,
+  postEscapeFromSeoulEpisodes,
+  postEscapeFromSeoulPlaces,
+} from '@supabase-api/sdk.gen';
 import { z } from 'zod';
 
 import { publicProcedure } from '@/configs/trpc/settings';
@@ -10,10 +15,33 @@ import type {
   WriteChapterRequest,
   WriteChapterResponse,
 } from './_types/novel';
-import { writeDbTools } from './mcp/db-write/tools';
+import { configureSupabaseRest } from './mcp/_libs/configure-supabase';
 
 const zGenerateChapterInput = z.object({
   currentTime: z.string().min(1),
+});
+
+const zPlace = z.object({
+  name: z.string(),
+  current_situation: z.string().default(''),
+  latitude: z.number().default(0),
+  longitude: z.number().default(0),
+  last_weather_condition: z.string().default(''),
+  last_weather_weather_condition: z.string().default(''),
+  last_mentioned_episode_id: z.string().default(''),
+});
+
+const zCharacter = z.object({
+  name: z.string(),
+  personality: z.string().default(''),
+  background: z.string().default(''),
+  appearance: z.string().default(''),
+  current_place: z.string().default(''),
+  relationships: z.unknown().default({}),
+  major_events: z.array(z.string()).default([]),
+  character_traits: z.array(z.string()).default([]),
+  current_status: z.string().default(''),
+  last_mentioned_episode_id: z.string().default(''),
 });
 
 type FinalizeResult = {
@@ -25,85 +53,89 @@ type FinalizeResult = {
 const buildInitialContext = (chapterId: string): ChapterContext => ({
   id: chapterId,
   previousStory: '',
-  references: {
-    characters: [],
-    places: [],
+  characters: {
+    new: [],
+    updated: [],
+  },
+  places: {
+    new: [],
+    updated: [],
   },
   content: '',
   summary: '',
 });
 
-const isDuplicateError = (error: unknown): boolean => {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const message = error.message.toLowerCase();
-
-  return message.includes('duplicate') || message.includes('already exists');
-};
-
-const callWriteTool = async (
-  chapterId: string,
-  toolName: string,
-  args: unknown,
-): Promise<Record<string, unknown>> => {
-  console.info(`[${chapterId}] Calling ${toolName}`);
-
-  const tool = writeDbTools.find((candidate) => candidate.name === toolName);
-
-  if (!tool) {
-    throw new Error(`write-db tool ${toolName} not found`);
-  }
-
-  try {
-    const result = await tool.handler(args);
-
-    console.info(`[${chapterId}] Completed ${toolName}`);
-
-    return result as Record<string, unknown>;
-  } catch (error) {
-    throw new Error(
-      `Failed to call write tool ${toolName}: ${error instanceof Error ? error.message : 'Unknown'}`,
-    );
-  }
-};
-
 const saveToDatabase = async (
   chapterId: string,
   finalizeResult: FinalizeResult,
 ): Promise<void> => {
-  await callWriteTool(chapterId, 'episodes.create', {
-    id: finalizeResult.episode.id,
-    content: finalizeResult.episode.content,
-    summary: finalizeResult.episode.summary,
-    characters: finalizeResult.characters.map((c) => c.name).filter(Boolean),
-    places: finalizeResult.places.map((p) => p.name).filter(Boolean),
+  configureSupabaseRest();
+
+  // 에피소드 생성
+  const characterNames = [
+    ...finalizeResult.characters.map((c) => String(c.name)),
+  ].filter(Boolean);
+  const placeNames = [
+    ...finalizeResult.places.map((p) => String(p.name)),
+  ].filter(Boolean);
+
+  const { error: episodeError } = await postEscapeFromSeoulEpisodes({
+    headers: { Prefer: 'return=representation' },
+    query: { select: '*' },
+    body: {
+      id: finalizeResult.episode.id,
+      content: finalizeResult.episode.content,
+      summary: finalizeResult.episode.summary,
+      characters: characterNames as string[],
+      places: placeNames as string[],
+    },
   });
 
+  if (episodeError) {
+    throw new Error(
+      `Failed to create episode: ${JSON.stringify(episodeError)}`,
+    );
+  }
+
+  // 새로운 장소 생성
   for (const place of finalizeResult.places) {
-    try {
-      await callWriteTool(chapterId, 'places.create', place);
-    } catch (error) {
-      if (isDuplicateError(error)) {
-        await callWriteTool(chapterId, 'places.update', place);
-      } else {
-        throw error;
-      }
+    const validatedPlace = zPlace.parse(place);
+
+    const { error } = await postEscapeFromSeoulPlaces({
+      headers: { Prefer: 'return=representation' },
+      query: { select: '*' },
+      body: {
+        ...validatedPlace,
+        updated_at: new Date().toISOString(),
+      },
+    });
+
+    if (error) {
+      throw new Error(`Failed to create place: ${JSON.stringify(error)}`);
     }
   }
 
+  // 업데이트된 장소 수정 (별도로 처리됨)
+
+  // 새로운 캐릭터 생성
   for (const character of finalizeResult.characters) {
-    try {
-      await callWriteTool(chapterId, 'characters.create', character);
-    } catch (error) {
-      if (isDuplicateError(error)) {
-        await callWriteTool(chapterId, 'characters.update', character);
-      } else {
-        throw error;
-      }
+    const validatedCharacter = zCharacter.parse(character);
+
+    const { error } = await postEscapeFromSeoulCharacters({
+      headers: { Prefer: 'return=representation' },
+      query: { select: '*' },
+      body: {
+        ...validatedCharacter,
+        updated_at: new Date().toISOString(),
+      },
+    });
+
+    if (error) {
+      throw new Error(`Failed to create character: ${JSON.stringify(error)}`);
     }
   }
+
+  // 업데이트된 캐릭터 수정 (별도로 처리됨)
 };
 
 const formatChapterId = (dateTime: string): string => {

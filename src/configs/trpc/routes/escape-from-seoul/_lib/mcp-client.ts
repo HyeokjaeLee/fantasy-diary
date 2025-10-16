@@ -2,8 +2,6 @@ import type { FunctionDeclaration } from '@google/genai';
 
 import { dbRead } from '../mcp/db-read';
 import { readDbTools } from '../mcp/db-read/tools';
-import { dbWrite } from '../mcp/db-write';
-import { writeDbTools } from '../mcp/db-write/tools';
 import { googlePlaces } from '../mcp/google-places';
 import { googleTools } from '../mcp/google-places/tools';
 import { weather } from '../mcp/weather';
@@ -19,28 +17,30 @@ type ToolCollections = {
   google: typeof googleTools;
   weather: typeof weatherTools;
   readDb: typeof readDbTools;
-  writeDb: typeof writeDbTools;
 };
 
 const toolCollections: ToolCollections = {
   google: googleTools,
   weather: weatherTools,
   readDb: readDbTools,
-  writeDb: writeDbTools,
 };
 
 const resolveToolCategory = (
   mcpToolName: string,
-): 'google' | 'weather' | 'readDb' | 'writeDb' => {
+): 'google' | 'weather' | 'readDb' => {
   const [category, action] = mcpToolName.split('.');
 
   if (category === 'google') return 'google';
   if (category === 'weather') return 'weather';
 
   if (['episodes', 'characters', 'places'].includes(category)) {
-    const writeActions = ['create', 'update', 'delete'];
+    if (['create', 'update', 'delete'].includes(action)) {
+      throw new Error(
+        `Write operation '${mcpToolName}' is not allowed. Use the API directly in the finalize phase.`,
+      );
+    }
 
-    return writeActions.includes(action) ? 'writeDb' : 'readDb';
+    return 'readDb';
   }
 
   throw new Error(`Unknown tool category: ${category}`);
@@ -53,7 +53,6 @@ export async function getMcpFunctionDeclarations(): Promise<
     ...toolCollections.weather,
     ...toolCollections.google,
     ...toolCollections.readDb,
-    ...toolCollections.writeDb,
   ];
 
   // Gemini function schema로 변환
@@ -106,17 +105,6 @@ export async function executeMcpToolViaTrpc(
       result = routerResult;
     } else if (category === 'readDb') {
       const routerResult = await dbRead
-        .createCaller({
-          isClient: false,
-          headers: undefined,
-        })
-        .execute({
-          name: mcpToolName,
-          arguments: args,
-        });
-      result = routerResult;
-    } else if (category === 'writeDb') {
-      const routerResult = await dbWrite
         .createCaller({
           isClient: false,
           headers: undefined,
