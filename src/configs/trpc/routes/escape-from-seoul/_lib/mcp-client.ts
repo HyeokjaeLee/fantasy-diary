@@ -4,8 +4,8 @@ import { dbRead } from '../mcp/db-read';
 import { readDbTools } from '../mcp/db-read/tools';
 import { dbWrite } from '../mcp/db-write';
 import { writeDbTools } from '../mcp/db-write/tools';
-import { googlePlaces } from '../mcp/google-place';
-import { googleTools } from '../mcp/google-place/tools';
+import { googlePlaces } from '../mcp/google-places';
+import { googleTools } from '../mcp/google-places/tools';
 import { weather } from '../mcp/weather';
 import { weatherTools } from '../mcp/weather/tools';
 
