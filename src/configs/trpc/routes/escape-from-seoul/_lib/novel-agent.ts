@@ -13,7 +13,7 @@ import { GeminiModel } from '@/types/gemini';
 
 import SYSTEM_PROMPT from '../_prompt/system-prompt.md';
 import type { ChapterContext, PhaseResult } from '../_types/novel';
-import { executeMcpTool } from './mcp-client';
+import { executeMcpToolViaTrpc } from './mcp-client';
 
 const RECONCILIATION_PROMPT = `
 당신은 "Escape from Seoul" 프로젝트의 데이터 정리 담당자입니다.
@@ -80,7 +80,7 @@ export class NovelWritingAgent {
 
       // DB에서 캐릭터 조회
       try {
-        const result = await executeMcpTool('characters_list', { name });
+        const result = await executeMcpToolViaTrpc('characters_list', { name });
         const parsed = JSON.parse(result);
         const characters = Array.isArray(parsed) ? parsed : [];
 
@@ -109,7 +109,7 @@ export class NovelWritingAgent {
 
       // DB에서 장소 조회
       try {
-        const result = await executeMcpTool('places_list', { name });
+        const result = await executeMcpToolViaTrpc('places_list', { name });
         const parsed = JSON.parse(result);
         const places = Array.isArray(parsed) ? parsed : [];
 
@@ -343,6 +343,7 @@ Context에 있는 캐릭터와 장소 정보를 적극 활용하세요.
     ];
 
     const output = await this.chatWithTools(messages, this.readOnlyTools);
+
     this.context.content = output;
     this.logContextChange('drafting', { content: output });
 
@@ -691,7 +692,7 @@ ${tool.description}
 
         let responsePayload: Record<string, unknown>;
         try {
-          const result = await executeMcpTool(toolName, args);
+          const result = await executeMcpToolViaTrpc(toolName, args);
           responsePayload = this.normalizeToolResponse(result);
 
           if (IS_DEV) {
@@ -739,6 +740,7 @@ ${tool.description}
   private normalizeToolResponse(result: string): Record<string, unknown> {
     try {
       const parsed = JSON.parse(result);
+
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         return parsed as Record<string, unknown>;
       }

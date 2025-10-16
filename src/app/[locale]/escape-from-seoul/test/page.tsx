@@ -2,15 +2,14 @@
 
 import { useState } from 'react';
 
-import type { WriteChapterResponse } from '@/app/api/escape-from-seoul/_types/novel';
 import { trpc } from '@/configs/trpc';
+import type { WriteChapterResponse } from '@/configs/trpc/routes/escape-from-seoul/_types/novel';
 
 export default function NovelTestPage() {
   const [datetime, setDatetime] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<WriteChapterResponse | null>(null);
-  const generateChapterMutation =
-    trpc.escapeFromSeoul.generateChapter.useMutation();
+  const generateChapterMutation = trpc.escapeFromSeoulEpisode.useMutation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

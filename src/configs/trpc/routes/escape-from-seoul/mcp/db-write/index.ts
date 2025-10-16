@@ -1,17 +1,10 @@
 import { TRPCError } from '@trpc/server';
-import { z } from 'zod';
 
-import { characterTools } from '@/app/api/escape-from-seoul/mcp/write-db/_libs/characterTools';
-import { episodeTools } from '@/app/api/escape-from-seoul/mcp/write-db/_libs/episodeTools';
-import { placeTools } from '@/app/api/escape-from-seoul/mcp/write-db/_libs/placeTools';
 import { publicProcedure, router } from '@/configs/trpc/settings';
 import type { Tool } from '@/types/mcp';
 
-export const writeDbTools: Tool[] = [
-  ...episodeTools,
-  ...characterTools,
-  ...placeTools,
-];
+import { zCallInput } from './schemas';
+import { writeDbTools } from './tools';
 
 const sanitizeTool = (tool: Tool): Omit<Tool, 'handler'> => {
   const { handler: _handler, ...rest } = tool;
@@ -20,12 +13,7 @@ const sanitizeTool = (tool: Tool): Omit<Tool, 'handler'> => {
   return rest;
 };
 
-const zCallInput = z.object({
-  name: z.string().min(1),
-  arguments: z.unknown().optional(),
-});
-
-export const escapeFromSeoulWriteDbRouter = router({
+export const dbWrite = router({
   list: publicProcedure.query(() =>
     writeDbTools.map((tool) => sanitizeTool(tool)),
   ),

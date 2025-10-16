@@ -7,7 +7,7 @@ import { zEscapeFromSeoulCharacters } from '@supabase-api/zod.gen';
 
 import type { Tool } from '@/types/mcp';
 
-import { configureSupabaseRest } from './configureSupabaseRest';
+import { configureSupabaseRest } from '../_libs/configure-supabase';
 
 const zCharactersUpdate = zEscapeFromSeoulCharacters.partial().extend({
   name: zEscapeFromSeoulCharacters.shape.name,

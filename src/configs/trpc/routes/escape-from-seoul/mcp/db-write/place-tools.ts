@@ -7,7 +7,7 @@ import { zEscapeFromSeoulPlaces } from '@supabase-api/zod.gen';
 
 import type { Tool } from '@/types/mcp';
 
-import { configureSupabaseRest } from './configureSupabaseRest';
+import { configureSupabaseRest } from '../_libs/configure-supabase';
 
 const zPlacesUpdate = zEscapeFromSeoulPlaces.partial().extend({
   name: zEscapeFromSeoulPlaces.shape.name,

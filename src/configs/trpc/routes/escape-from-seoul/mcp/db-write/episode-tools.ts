@@ -8,7 +8,7 @@ import { z } from 'zod';
 
 import type { Tool } from '@/types/mcp';
 
-import { configureSupabaseRest } from './configureSupabaseRest';
+import { configureSupabaseRest } from '../_libs/configure-supabase';
 
 const SUMMARY_MAX_VALIDATION = '최대 500자까지 입력 가능합니다.';
 const CONTENT_MAX_VALIDATION = '최대 5,000자까지 입력 가능합니다.';
