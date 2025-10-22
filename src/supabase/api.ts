@@ -1,17 +1,14 @@
-import { client } from '@generated/supabase/client.gen';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { ENV } from '@/env';
-import { assert } from '@/utils';
+import { supabaseServer } from '@/lib/supabaseServer';
+import type { Database } from '@/supabase/database';
 
-const url = (ENV.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
-const baseUrl = `${url}/rest/v1`;
-const serviceRole = ENV.NEXT_SUPABASE_SERVICE_ROLE;
+const adminClient: SupabaseClient<Database> | null = supabaseServer;
 
-assert(url && serviceRole);
+if (!adminClient) {
+  throw new Error(
+    'Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_SUPABASE_SERVICE_ROLE env when creating Supabase admin client',
+  );
+}
 
-client.setConfig({
-  baseUrl,
-  headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-});
-
-export * from '@generated/supabase/sdk.gen';
+export const supabaseAdminClient = adminClient;

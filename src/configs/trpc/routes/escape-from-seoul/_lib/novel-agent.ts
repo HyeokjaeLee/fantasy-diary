@@ -156,15 +156,16 @@ export class NovelWritingAgent {
           };
           this.context.characters.updated.push({
             name: dbCharacter.name,
-            personality: dbCharacter.personality,
-            background: dbCharacter.background,
-            appearance: dbCharacter.appearance,
-            current_place: dbCharacter.current_place,
-            relationships: dbCharacter.relationships,
-            major_events: dbCharacter.major_events,
-            character_traits: dbCharacter.character_traits,
-            current_status: dbCharacter.current_status,
-            last_mentioned_episode_id: dbCharacter.last_mentioned_episode_id,
+            personality: dbCharacter.personality ?? '',
+            background: dbCharacter.background ?? '',
+            appearance: dbCharacter.appearance ?? '',
+            current_place: dbCharacter.current_place ?? '',
+            relationships: dbCharacter.relationships ?? {},
+            major_events: dbCharacter.major_events ?? [],
+            character_traits: dbCharacter.character_traits ?? [],
+            current_status: dbCharacter.current_status ?? '',
+            last_mentioned_episode_id:
+              dbCharacter.last_mentioned_episode_id ?? '',
             updated_at: new Date().toISOString(),
           });
           if (IS_DEV) {
@@ -209,13 +210,13 @@ export class NovelWritingAgent {
           };
           this.context.places.updated.push({
             name: dbPlace.name,
-            current_situation: dbPlace.current_situation,
-            latitude: dbPlace.latitude,
-            longitude: dbPlace.longitude,
-            last_weather_condition: dbPlace.last_weather_condition,
+            current_situation: dbPlace.current_situation ?? '',
+            latitude: dbPlace.latitude ?? 0,
+            longitude: dbPlace.longitude ?? 0,
+            last_weather_condition: dbPlace.last_weather_condition ?? '',
             last_weather_weather_condition:
-              dbPlace.last_weather_weather_condition,
-            last_mentioned_episode_id: dbPlace.last_mentioned_episode_id,
+              dbPlace.last_weather_weather_condition ?? '',
+            last_mentioned_episode_id: dbPlace.last_mentioned_episode_id ?? '',
             updated_at: new Date().toISOString(),
           });
           if (IS_DEV) {

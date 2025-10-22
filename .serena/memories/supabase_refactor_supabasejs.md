@@ -1,0 +1,4 @@
+- Replaced Hey API generated REST client usage in Escape From Seoul routes with Supabase JS service-role client helpers.
+- Added shared Database typing (supabase/database.ts) and ensured supabaseServer exports a typed Supabase client reused across routes.
+- Updated MCP tools and TRPC mutation handlers to query Supabase directly and added safe fallbacks/defaults when mapping existing records.
+- Removed @supabase-api client configuration from providers; Supabase access now centralized in Supabase JS clients.

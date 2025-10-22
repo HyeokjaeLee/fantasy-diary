@@ -1,13 +1,11 @@
-import { client } from '@supabase-api/client.gen';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { TRPCError } from '@trpc/server';
 
-import { ENV } from '@/env';
+import { supabaseServer } from '@/lib/supabaseServer';
+import type { Database } from '@/supabase/database';
 
-export const configureSupabaseRest = () => {
-  const url = (ENV.NEXT_PUBLIC_SUPABASE_URL ?? '').replace(/\/$/, '');
-  const baseUrl = `${url}/rest/v1`;
-  const serviceRole = ENV.NEXT_SUPABASE_SERVICE_ROLE;
-  if (!url || !serviceRole) {
+export const getSupabaseServiceRoleClient = (): SupabaseClient<Database> => {
+  if (!supabaseServer) {
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message:
@@ -15,8 +13,5 @@ export const configureSupabaseRest = () => {
     });
   }
 
-  client.setConfig({
-    baseUrl,
-    headers: { apikey: serviceRole, Authorization: `Bearer ${serviceRole}` },
-  });
+  return supabaseServer;
 };

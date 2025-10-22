@@ -1,8 +1,6 @@
-import { getEscapeFromSeoulCharacters } from '@supabase-api/sdk.gen';
-
 import type { Tool } from '@/types/mcp';
 
-import { configureSupabaseRest } from '../_libs/configure-supabase';
+import { getSupabaseServiceRoleClient } from '../_libs/configure-supabase';
 import { zListArgs, zNameLookup } from './schemas';
 
 export const characterTools: Tool[] = [
@@ -26,14 +24,15 @@ export const characterTools: Tool[] = [
     },
     handler: async (rawArgs: unknown) => {
       const { limit = 50 } = zListArgs.parse(rawArgs ?? {});
-      configureSupabaseRest();
-      const { data, error } = await getEscapeFromSeoulCharacters({
-        headers: { Prefer: 'count=none' },
-        query: { order: 'name.asc', limit: String(limit) },
-      });
+      const supabase = getSupabaseServiceRoleClient();
+      const { data, error } = await supabase
+        .from('escape_from_seoul_characters')
+        .select('*')
+        .order('name', { ascending: true })
+        .limit(limit);
       if (error) throw new Error(JSON.stringify(error));
 
-      return Array.isArray(data) ? data : [];
+      return data ?? [];
     },
   },
   {
@@ -54,14 +53,15 @@ export const characterTools: Tool[] = [
     },
     handler: async (rawArgs: unknown) => {
       const { name } = zNameLookup.parse(rawArgs ?? {});
-      configureSupabaseRest();
-      const { data, error } = await getEscapeFromSeoulCharacters({
-        headers: { Prefer: 'count=none' },
-        query: { name: `eq.${name}`, limit: '1' },
-      });
+      const supabase = getSupabaseServiceRoleClient();
+      const { data, error } = await supabase
+        .from('escape_from_seoul_characters')
+        .select('*')
+        .eq('name', name)
+        .maybeSingle();
       if (error) throw new Error(JSON.stringify(error));
 
-      return Array.isArray(data) ? (data[0] ?? null) : null;
+      return data ?? null;
     },
   },
 ];

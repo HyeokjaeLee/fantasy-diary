@@ -1,8 +1,6 @@
-import { getEscapeFromSeoulEpisodes } from '@supabase-api/sdk.gen';
-
 import type { Tool } from '@/types/mcp';
 
-import { configureSupabaseRest } from '../_libs/configure-supabase';
+import { getSupabaseServiceRoleClient } from '../_libs/configure-supabase';
 import { zEpisodeId, zListArgs } from './schemas';
 
 export const episodeTools: Tool[] = [
@@ -26,14 +24,15 @@ export const episodeTools: Tool[] = [
     },
     handler: async (rawArgs: unknown) => {
       const { limit = 50 } = zListArgs.parse(rawArgs ?? {});
-      configureSupabaseRest();
-      const { data, error } = await getEscapeFromSeoulEpisodes({
-        headers: { Prefer: 'count=none' },
-        query: { order: 'id.desc', limit: String(limit) },
-      });
+      const supabase = getSupabaseServiceRoleClient();
+      const { data, error } = await supabase
+        .from('escape_from_seoul_episodes')
+        .select('*')
+        .order('id', { ascending: false })
+        .limit(limit);
       if (error) throw new Error(JSON.stringify(error));
 
-      return Array.isArray(data) ? data : [];
+      return data ?? [];
     },
   },
   {
@@ -53,14 +52,15 @@ export const episodeTools: Tool[] = [
     },
     handler: async (rawArgs: unknown) => {
       const { id } = zEpisodeId.parse(rawArgs ?? {});
-      configureSupabaseRest();
-      const { data, error } = await getEscapeFromSeoulEpisodes({
-        headers: { Prefer: 'count=none' },
-        query: { id: `eq.${id}`, limit: '1' },
-      });
+      const supabase = getSupabaseServiceRoleClient();
+      const { data, error } = await supabase
+        .from('escape_from_seoul_episodes')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
       if (error) throw new Error(JSON.stringify(error));
 
-      return Array.isArray(data) ? (data[0] ?? null) : null;
+      return data ?? null;
     },
   },
 ];

@@ -1,11 +1,11 @@
-import {
-  postEscapeFromSeoulCharacters,
-  postEscapeFromSeoulEpisodes,
-  postEscapeFromSeoulPlaces,
-} from '@supabase-api/sdk.gen';
 import { z } from 'zod';
 
 import { publicProcedure } from '@/configs/trpc/settings';
+import type {
+  EscapeFromSeoulCharacters,
+  EscapeFromSeoulEpisodes,
+  EscapeFromSeoulPlaces,
+} from '@/supabase/type';
 import { devConsole } from '@/utils/dev-console';
 
 import { getMcpFunctionDeclarations } from './_lib/mcp-client';
@@ -15,7 +15,7 @@ import type {
   WriteChapterRequest,
   WriteChapterResponse,
 } from './_types/novel';
-import { configureSupabaseRest } from './mcp/_libs/configure-supabase';
+import { getSupabaseServiceRoleClient } from './mcp/_libs/configure-supabase';
 
 const zGenerateChapterInput = z.object({
   currentTime: z.string().min(1),
@@ -69,7 +69,7 @@ const saveToDatabase = async (
   chapterId: string,
   finalizeResult: FinalizeResult,
 ): Promise<void> => {
-  configureSupabaseRest();
+  const supabase = getSupabaseServiceRoleClient();
 
   // 에피소드 생성
   const characterNames = [
@@ -79,17 +79,17 @@ const saveToDatabase = async (
     ...finalizeResult.places.map((p) => String(p.name)),
   ].filter(Boolean);
 
-  const { error: episodeError } = await postEscapeFromSeoulEpisodes({
-    headers: { Prefer: 'return=representation' },
-    query: { select: '*' },
-    body: {
-      id: finalizeResult.episode.id,
-      content: finalizeResult.episode.content,
-      summary: finalizeResult.episode.summary,
-      characters: characterNames as string[],
-      places: placeNames as string[],
-    },
-  });
+  const episodePayload: EscapeFromSeoulEpisodes = {
+    id: finalizeResult.episode.id,
+    content: finalizeResult.episode.content,
+    summary: finalizeResult.episode.summary,
+    characters: characterNames as string[],
+    places: placeNames as string[],
+  };
+
+  const { error: episodeError } = await supabase
+    .from('escape_from_seoul_episodes')
+    .insert(episodePayload);
 
   if (episodeError) {
     throw new Error(
@@ -100,15 +100,14 @@ const saveToDatabase = async (
   // 새로운 장소 생성
   for (const place of finalizeResult.places) {
     const validatedPlace = zPlace.parse(place);
+    const placePayload: EscapeFromSeoulPlaces = {
+      ...validatedPlace,
+      updated_at: new Date().toISOString(),
+    };
 
-    const { error } = await postEscapeFromSeoulPlaces({
-      headers: { Prefer: 'return=representation' },
-      query: { select: '*' },
-      body: {
-        ...validatedPlace,
-        updated_at: new Date().toISOString(),
-      },
-    });
+    const { error } = await supabase
+      .from('escape_from_seoul_places')
+      .insert(placePayload);
 
     if (error) {
       throw new Error(`Failed to create place: ${JSON.stringify(error)}`);
@@ -120,15 +119,14 @@ const saveToDatabase = async (
   // 새로운 캐릭터 생성
   for (const character of finalizeResult.characters) {
     const validatedCharacter = zCharacter.parse(character);
+    const characterPayload: EscapeFromSeoulCharacters = {
+      ...validatedCharacter,
+      updated_at: new Date().toISOString(),
+    };
 
-    const { error } = await postEscapeFromSeoulCharacters({
-      headers: { Prefer: 'return=representation' },
-      query: { select: '*' },
-      body: {
-        ...validatedCharacter,
-        updated_at: new Date().toISOString(),
-      },
-    });
+    const { error } = await supabase
+      .from('escape_from_seoul_characters')
+      .insert(characterPayload);
 
     if (error) {
       throw new Error(`Failed to create character: ${JSON.stringify(error)}`);

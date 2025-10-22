@@ -8,7 +8,7 @@ import type { WriteChapterResponse } from '@/configs/trpc/routes/escape-from-seo
 export default function NovelTestPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<WriteChapterResponse | null>(null);
-  const generateChapterMutation = trpc.novel.create.useMutation();
+  const generateChapterMutation = trpc.escapeFromSeoulEpisode.useMutation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,7 +17,9 @@ export default function NovelTestPage() {
     setResult(null);
 
     try {
-      const data = await generateChapterMutation.mutateAsync({});
+      const data = await generateChapterMutation.mutateAsync({
+        currentTime: new Date().toISOString(),
+      });
       setResult(data);
     } catch (error) {
       setResult({
