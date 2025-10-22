@@ -6,27 +6,18 @@ import { trpc } from '@/configs/trpc';
 import type { WriteChapterResponse } from '@/configs/trpc/routes/escape-from-seoul/_types/novel';
 
 export default function NovelTestPage() {
-  const [datetime, setDatetime] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<WriteChapterResponse | null>(null);
-  const generateChapterMutation = trpc.escapeFromSeoulEpisode.useMutation();
+  const generateChapterMutation = trpc.novel.create.useMutation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!datetime) {
-      alert('날짜를 입력해주세요');
-
-      return;
-    }
 
     setLoading(true);
     setResult(null);
 
     try {
-      const data = await generateChapterMutation.mutateAsync({
-        currentTime: datetime,
-      });
+      const data = await generateChapterMutation.mutateAsync({});
       setResult(data);
     } catch (error) {
       setResult({
@@ -56,23 +47,6 @@ export default function NovelTestPage() {
           onSubmit={handleSubmit}
           className="mb-8 rounded-lg bg-white p-6 shadow"
         >
-          <div className="mb-4">
-            <label htmlFor="datetime" className="mb-2 block font-medium">
-              Date & Time (ISO 8601)
-            </label>
-            <input
-              id="datetime"
-              type="datetime-local"
-              value={datetime}
-              onChange={(e) => setDatetime(e.target.value)}
-              className="w-full rounded border border-gray-300 px-4 py-2"
-              disabled={loading}
-            />
-            <p className="mt-1 text-sm text-gray-500">
-              Example: 2025-04-21T18:30
-            </p>
-          </div>
-
           <button
             type="submit"
             disabled={loading}
