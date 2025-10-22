@@ -1,3 +1,4 @@
+import type { EscapeFromSeoulCharacters } from '@/supabase/type';
 import type { Tool } from '@/types/mcp';
 
 import { getSupabaseServiceRoleClient } from '../_libs/configure-supabase';
@@ -27,7 +28,7 @@ export const characterTools: Tool[] = [
       const supabase = getSupabaseServiceRoleClient();
       const { data, error } = await supabase
         .from('escape_from_seoul_characters')
-        .select('*')
+        .select<'*', EscapeFromSeoulCharacters>('*')
         .order('name', { ascending: true })
         .limit(limit);
       if (error) throw new Error(JSON.stringify(error));
@@ -56,7 +57,7 @@ export const characterTools: Tool[] = [
       const supabase = getSupabaseServiceRoleClient();
       const { data, error } = await supabase
         .from('escape_from_seoul_characters')
-        .select('*')
+        .select<'*', EscapeFromSeoulCharacters>('*')
         .eq('name', name)
         .maybeSingle();
       if (error) throw new Error(JSON.stringify(error));

@@ -1,3 +1,4 @@
+import type { EscapeFromSeoulEpisodes } from '@/supabase/type';
 import type { Tool } from '@/types/mcp';
 
 import { getSupabaseServiceRoleClient } from '../_libs/configure-supabase';
@@ -27,7 +28,7 @@ export const episodeTools: Tool[] = [
       const supabase = getSupabaseServiceRoleClient();
       const { data, error } = await supabase
         .from('escape_from_seoul_episodes')
-        .select('*')
+        .select<'*', EscapeFromSeoulEpisodes>('*')
         .order('id', { ascending: false })
         .limit(limit);
       if (error) throw new Error(JSON.stringify(error));
@@ -55,9 +56,10 @@ export const episodeTools: Tool[] = [
       const supabase = getSupabaseServiceRoleClient();
       const { data, error } = await supabase
         .from('escape_from_seoul_episodes')
-        .select('*')
+        .select<'*', EscapeFromSeoulEpisodes>('*')
         .eq('id', id)
         .maybeSingle();
+
       if (error) throw new Error(JSON.stringify(error));
 
       return data ?? null;
