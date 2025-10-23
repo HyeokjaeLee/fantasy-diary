@@ -14,7 +14,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:ci": "jest --runInBand --ci",
-    "gen:api": "bash scripts/gen-api.sh"
+    "gen:api": "bash scripts/gen-api.sh",
+    "gen:types": "bun supabase gen types typescript --project-id 'obxjfruutnwrfyiomadx' --schema public > __generated__/supabase/database.types.ts"
   },
   "dependencies": {
     "@google/genai": "^1.25.0",

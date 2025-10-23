@@ -4,3 +4,7 @@ export enum NovelCategory {
   Adventure = 'adventure',
   Thriller = 'thriller',
 }
+
+export enum NovelId {
+  EscapeFromSeoul = 'escape-from-seoul',
+}
