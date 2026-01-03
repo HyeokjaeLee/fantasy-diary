@@ -1,0 +1,19 @@
+{
+  "name": "@fantasy-diary/agent-server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "bun x tsc --noEmit"
+  },
+  "dependencies": {
+    "@fantasy-diary/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@fantasy-diary/dev": "workspace:*",
+    "typescript": "^5.7.3"
+  }
+}

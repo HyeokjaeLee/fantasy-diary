@@ -1,31 +1,33 @@
----
-description: Use Bun instead of Node.js, npm, pnpm, or vite.
-globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json"
-alwaysApply: false
----
+# 서비스 개요
 
-Default to using Bun instead of Node.js.
+이 프로젝트는 AI를 통해 소설을 발행하는 서비스입니다.
 
-- Use `bun <file>` instead of `node <file>` or `ts-node <file>`
-- Use `bun test` instead of `jest` or `vitest`
-- Use `bun build <file.html|file.ts|file.css>` instead of `webpack` or `esbuild`
-- Use `bun install` instead of `npm install` or `yarn install` or `pnpm install`
-- Use `bun run <script>` instead of `npm run <script>` or `yarn run <script>` or `pnpm run <script>`
-- Bun automatically loads .env, so don't use dotenv.
+# Bun 가이드라인
 
-## APIs
+이 프로젝트는 Node.js 대신 **Bun**을 기본 런타임 및 패키지 매니저로 사용합니다.
 
-- `Bun.serve()` supports WebSockets, HTTPS, and routes. Don't use `express`.
-- `bun:sqlite` for SQLite. Don't use `better-sqlite3`.
-- `Bun.redis` for Redis. Don't use `ioredis`.
-- `Bun.sql` for Postgres. Don't use `pg` or `postgres.js`.
-- `WebSocket` is built-in. Don't use `ws`.
-- Prefer `Bun.file` over `node:fs`'s readFile/writeFile
-- Bun.$`ls` instead of execa.
+## 기본 원칙
 
-## Testing
+- `node <file>` 또는 `ts-node <file>` 대신 `bun <file>`을 사용하세요.
+- `jest` 또는 `vitest` 대신 `bun test`를 사용하세요.
+- `webpack` 또는 `esbuild` 대신 `bun build <file.html|file.ts|file.css>`를 사용하세요.
+- `npm install`, `yarn install`, `pnpm install` 대신 `bun install`을 사용하세요.
+- `npm run <script>`, `yarn run <script>`, `pnpm run <script>` 대신 `bun run <script>`를 사용하세요.
+- Bun은 `.env`를 자동으로 로드하므로 `dotenv`를 사용하지 마세요.
 
-Use `bun test` to run tests.
+## API 사용
+
+- `Bun.serve()`는 WebSocket, HTTPS, 라우팅을 지원합니다. `express`를 사용하지 마세요.
+- SQLite에는 `bun:sqlite`를 사용하세요. `better-sqlite3`를 사용하지 마세요.
+- Redis에는 `Bun.redis`를 사용하세요. `ioredis`를 사용하지 마세요.
+- Postgres에는 `Bun.sql`를 사용하세요. `pg` 또는 `postgres.js`를 사용하지 마세요.
+- `WebSocket`은 내장되어 있습니다. `ws`를 사용하지 마세요.
+- `node:fs`의 `readFile`/`writeFile` 대신 `Bun.file`을 권장합니다.
+- execa 대신 `Bun.$`를 사용하세요.
+
+## 테스팅
+
+테스트를 실행하려면 `bun test`를 사용하세요.
 
 ```ts#index.test.ts
 import { test, expect } from "bun:test";
@@ -35,11 +37,11 @@ test("hello world", () => {
 });
 ```
 
-## Frontend
+## 프론트엔드
 
-Use HTML imports with `Bun.serve()`. Don't use `vite`. HTML imports fully support React, CSS, Tailwind.
+`Bun.serve()`와 함께 HTML import를 사용하세요. `vite`를 사용하지 마세요. HTML import는 React, CSS, Tailwind를 완벽하게 지원합니다.
 
-Server:
+서버:
 
 ```ts#index.ts
 import index from "./index.html"
@@ -53,7 +55,7 @@ Bun.serve({
       },
     },
   },
-  // optional websocket support
+  // 선택적 websocket 지원
   websocket: {
     open: (ws) => {
       ws.send("Hello, world!");
@@ -62,7 +64,7 @@ Bun.serve({
       ws.send(message);
     },
     close: (ws) => {
-      // handle close
+      // close 핸들링
     }
   },
   development: {
@@ -72,7 +74,7 @@ Bun.serve({
 })
 ```
 
-HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will transpile & bundle automatically. `<link>` tags can point to stylesheets and Bun's CSS bundler will bundle.
+HTML 파일은 `.tsx`, `.jsx`, `.js` 파일을 직접 로드할 수 있으며 Bun의 번들러가 자동으로 트랜스파일 및 번들링합니다. `<link>` 태그는 스타일시트를 가리킬 수 있으며 Bun의 CSS 번들러가 이를 처리합니다.
 
 ```html#index.html
 <html>
@@ -83,12 +85,12 @@ HTML files can import .tsx, .jsx or .js files directly and Bun's bundler will tr
 </html>
 ```
 
-With the following `frontend.tsx`:
+다음과 같은 `frontend.tsx`를 사용하는 경우:
 
 ```tsx#frontend.tsx
 import React from "react";
 
-// import .css files directly and it works
+// .css 파일을 직접 import하면 작동합니다
 import './index.css';
 
 import { createRoot } from "react-dom/client";
@@ -102,10 +104,10 @@ export default function Frontend() {
 root.render(<Frontend />);
 ```
 
-Then, run index.ts
+그 후, index.ts를 실행합니다.
 
 ```sh
 bun --hot ./index.ts
 ```
 
-For more information, read the Bun API docs in `node_modules/bun-types/docs/**.md`.
+더 자세한 정보는 `node_modules/bun-types/docs/**.md`에 있는 Bun API 문서를 참조하세요.
