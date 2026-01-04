@@ -14,7 +14,7 @@
 - **Deployment**: **Vercel**
   - Git Push 기반의 자동 배포 워크플로우를 사용합니다.
   - Vercel Analytics 및 Speed Insights를 통해 성능을 모니터링합니다.
-- **Styling**: Tailwind CSS, Lucide React (아이콘)
+- **Styling**: Tailwind CSS
 - **Communication**: tRPC, TanStack Query
 
 ## 개발 가이드라인

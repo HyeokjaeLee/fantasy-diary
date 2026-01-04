@@ -1,5 +1,5 @@
 {
-  "extends": "../../packages/dev/tsconfig.base.json",
+  "extends": "@fantasy-diary/configs/tsconfig.base",
   "include": ["src/**/*"],
   "exclude": ["node_modules"]
 }
