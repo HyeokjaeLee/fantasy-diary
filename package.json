@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "preinstall": "syncpack fix-mismatches && syncpack format",
-    "dev": "bun --filter \"*\" dev",
+    "dev:agent-server": "bun --filter @fantasy-diary/agent-server dev",
     "build": "bun --filter \"*\" build",
     "lint": "bun --filter \"*\" lint",
     "lint:fix": "bun --filter \"*\" lint:fix",

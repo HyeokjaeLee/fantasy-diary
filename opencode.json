@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "google-cloud": {
+      "type": "local",
+      "command": ["npx", "-y", "@google-cloud/gcloud-mcp"],
+      "enabled": true
+    },
+    "supabase": {
+      "type": "remote",
+      "url": "https://mcp.supabase.com/mcp",
+      "enabled": true
+    }
+  }
+}

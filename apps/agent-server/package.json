@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "env:pull": "doppler secrets download --project agent-server --config dev --format env --no-file > .env",
+    "predev": "bun run env:pull",
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
     "lint": "eslint .",
