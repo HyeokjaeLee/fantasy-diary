@@ -16,6 +16,7 @@
     "incremental": true,
     "baseUrl": ".",
     "paths": {
+      "@fantasy-diary/shared/supabase": ["../../packages/shared/__generated__/supabase.ts"],
       "@fantasy-diary/*": ["../../packages/*/src"]
     }
   },
