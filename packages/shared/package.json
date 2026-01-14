@@ -1,0 +1,31 @@
+{
+  "name": "@fantasy-diary/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./supabase": "./__generated__/supabase.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "bun x tsc --noEmit",
+    "supabase:types": "bun run ./scripts/generate-supabase-type.ts",
+    "env:pull": "doppler secrets download --project shared --config dev --format env --no-file > .env"
+  },
+  "dependencies": {
+    "@google/genai": "^1.25.0",
+    "@supabase/supabase-js": "^2.76.1",
+    "es-toolkit": "^1.40.0",
+    "ky": "^1.12.0",
+    "nanoid": "^5.1.6",
+    "superjson": "^2.2.2",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@fantasy-diary/configs": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

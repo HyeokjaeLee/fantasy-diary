@@ -1,9 +1,18 @@
-# Suggested Commands
-- `bun install` — install dependencies (project uses Bun 1.2.18 runtime).
-- `bun run dev` — start turbopack dev server with typesafe-url watcher.
-- `bun run build` — Next.js production build.
-- `bun run start` — serve production build.
-- `bun run lint` — run Next.js/ESLint suite.
-- `bun run typecheck` — TypeScript `tsc --noEmit`.
-- `bun run test` — Jest test suite (see also `test:watch`, `test:ci`).
-- `bun run gen:api` — regenerate API clients via `scripts/gen-api.sh`.
+# 권장 명령어 (Suggested Commands)
+
+## 의존성 관리
+```bash
+bun install
+```
+
+## 개발 서버 실행
+- **Web App**: `cd apps/web && bun dev` (Next.js 3019 포트)
+- **Agent Server**: `cd apps/agent-server && bun dev`
+
+## 코드 품질 관리
+- **전체 린트 수정**: `bun run lint:fix` (각 패키지 내 정의됨)
+- **타입 체크**: `bun run typecheck`
+
+## 유틸리티
+- **Supabase 타입 생성**: `cd packages/shared && bun run gen:types`
+- **API 생성**: `cd packages/shared && bun run gen:api`

@@ -1,0 +1,29 @@
+{
+  "name": "@fantasy-diary/agent-server",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "env:pull": "doppler secrets download --project agent-server --config dev --format env --no-file > .env",
+    "predev": "bun run env:pull",
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts",
+    "run:daily": "bun src/index.ts --kind=daily",
+    "run:daily:dry": "bun src/index.ts --kind=daily --dryRun=true",
+    "gcp:build": "gcloud builds submit . --project fantasy-diary --tag asia-northeast3-docker.pkg.dev/fantasy-diary/agent-server/agent-server:latest",
+    "gcp:job:create": "gcloud run jobs create agent-server --project fantasy-diary --region asia-northeast3 --image asia-northeast3-docker.pkg.dev/fantasy-diary/agent-server/agent-server:latest",
+    "gcp:job:update": "gcloud run jobs update agent-server --project fantasy-diary --region asia-northeast3 --image asia-northeast3-docker.pkg.dev/fantasy-diary/agent-server/agent-server:latest",
+    "gcp:deploy": "bun run gcp:build && bun run gcp:job:update",
+    "gcp:run:daily": "gcloud run jobs execute agent-server --project fantasy-diary --region asia-northeast3 --args=--kind=daily",
+    "gcp:scheduler:run": "gcloud scheduler jobs run agent-server-daily --project fantasy-diary --location asia-northeast3",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "bun x tsc --noEmit"
+  },
+  "dependencies": {
+    "@fantasy-diary/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@fantasy-diary/configs": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}

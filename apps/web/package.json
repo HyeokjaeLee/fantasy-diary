@@ -1,0 +1,41 @@
+{
+  "name": "@fantasy-diary/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack -p 3019",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "lint:fix": "echo 'skip lint for now'",
+    "typecheck": "bun x tsc --noEmit"
+  },
+  "dependencies": {
+    "@fantasy-diary/shared": "workspace:*",
+    "@tanstack/react-query": "^5.87.4",
+    "@trpc/client": "^11.6.0",
+    "@trpc/next": "^11.6.0",
+    "@trpc/react-query": "^11.6.0",
+    "clsx": "^2.1.1",
+    "ky": "^1.12.0",
+    "nanoid": "^5.1.6",
+    "next": "^16.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "superjson": "^2.2.2",
+    "tailwind-merge": "^3.3.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "latest",
+    "@eslint/js": "latest",
+    "@fantasy-diary/configs": "workspace:*",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "eslint-config-next": "latest",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^4.1.15",
+    "typescript": "^5.9.3"
+  }
+}
