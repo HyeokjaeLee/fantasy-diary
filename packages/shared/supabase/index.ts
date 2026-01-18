@@ -1,6 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import type { Database } from "../__generated__/supabase";
+import type { Database } from "./type";
 
 type EnvLike = Record<string, string | undefined>;
 
@@ -13,6 +13,7 @@ type CreateSupabaseClientParams = {
 function requireEnv(env: EnvLike, name: string): string {
   const value = env[name];
   if (!value) throw new Error(`Missing required env: ${name}`);
+
   return value;
 }
 

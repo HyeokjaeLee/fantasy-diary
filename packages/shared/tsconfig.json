@@ -1,5 +1,5 @@
 {
   "extends": "@fantasy-diary/configs/tsconfig.base",
-  "include": ["src/**/*"],
+  "include": ["supabase"],
   "exclude": ["node_modules"]
 }

@@ -1,14 +1,13 @@
+import { createSupabaseAdminClient } from "@fantasy-diary/shared/supabase";
+import type { Json } from "@fantasy-diary/shared/supabase/type";
 import {
-  FunctionCallingConfigMode,
-  GoogleGenAI,
-  Type,
   type FunctionCall,
+  FunctionCallingConfigMode,
   type FunctionDeclaration,
+  GoogleGenAI,
   type Part,
+  Type,
 } from "@google/genai";
-
-import type { Json } from "@fantasy-diary/shared/supabase";
-import { createSupabaseAdminClient } from "@fantasy-diary/shared/supabase-client";
 
 type ArgMap = Record<string, string | boolean>;
 
@@ -231,6 +230,7 @@ function toJson(value: unknown, depth = 0): Json {
   if (typeof value === "number") {
     if (!Number.isFinite(value))
       throw new Error("JSON number must be finite");
+
     return value;
   }
   if (typeof value === "boolean") return value;
@@ -238,6 +238,7 @@ function toJson(value: unknown, depth = 0): Json {
   if (Array.isArray(value)) {
     const list: Json[] = [];
     for (const item of value) list.push(toJson(item, depth + 1));
+
     return list;
   }
 
@@ -247,6 +248,7 @@ function toJson(value: unknown, depth = 0): Json {
       if (raw === undefined) continue;
       obj[key] = toJson(raw, depth + 1);
     }
+
     return obj;
   }
 
@@ -334,6 +336,7 @@ async function dbSelect(
 
   const { data, error } = await query;
   if (error) throw new Error(`db_select: ${error.message}`);
+
   return data;
 }
 
@@ -366,6 +369,7 @@ async function ragSearchSummaries(params: {
   });
 
   if (error) throw new Error(`rag_search_summaries: ${error.message}`);
+
   return data;
 }
 
@@ -410,6 +414,7 @@ async function ragSearchChunks(params: {
   });
 
   if (error) throw new Error(`rag_search_chunks: ${error.message}`);
+
   return data;
 }
 
@@ -448,6 +453,7 @@ async function upsertCharacter(params: {
 
     if (error) throw new Error(`upsert_character: ${error.message}`);
     if (!data) throw new Error("upsert_character: insert failed");
+
     return data;
   }
 
@@ -472,6 +478,7 @@ async function upsertCharacter(params: {
 
   if (error) throw new Error(`upsert_character: ${error.message}`);
   if (!data) throw new Error("upsert_character: update failed");
+
   return data;
 }
 
@@ -510,6 +517,7 @@ async function upsertLocation(params: {
 
     if (error) throw new Error(`upsert_location: ${error.message}`);
     if (!data) throw new Error("upsert_location: insert failed");
+
     return data;
   }
 
@@ -534,6 +542,7 @@ async function upsertLocation(params: {
 
   if (error) throw new Error(`upsert_location: ${error.message}`);
   if (!data) throw new Error("upsert_location: update failed");
+
   return data;
 }
 
@@ -562,6 +571,7 @@ async function insertPlotSeed(params: {
 
   if (error) throw new Error(`insert_plot_seed: ${error.message}`);
   if (!data) throw new Error("insert_plot_seed: insert failed");
+
   return data;
 }
 
@@ -848,6 +858,7 @@ async function getNextEpisodeNo(params: {
   if (error) throw new Error(`getNextEpisodeNo: ${error.message}`);
 
   const last = data?.[0]?.episode_no;
+
   return typeof last === "number" ? last + 1 : 1;
 }
 
@@ -869,6 +880,7 @@ async function insertEpisode(params: {
 
   if (error) throw new Error(`insertEpisode: ${error.message}`);
   if (!data) throw new Error("insertEpisode: insert failed");
+
   return data;
 }
 
@@ -989,6 +1001,7 @@ async function generateEpisodeWithTools(params: {
     throw new Error("Gemini returned empty text");
 
   const json = extractFirstJsonObject(text);
+
   return assertGenerateResult(json);
 }
 
