@@ -731,7 +731,7 @@ function createGeminiSupabaseCallableTool(params: {
           parts.push({
             functionResponse: {
               name,
-              response: result as Record<string, unknown>,
+              response: { data: result },
             },
           });
 
@@ -750,7 +750,7 @@ function createGeminiSupabaseCallableTool(params: {
           parts.push({
             functionResponse: {
               name,
-              response: result as Record<string, unknown>,
+              response: { data: result },
             },
           });
 
@@ -769,7 +769,7 @@ function createGeminiSupabaseCallableTool(params: {
           parts.push({
             functionResponse: {
               name,
-              response: result as Record<string, unknown>,
+              response: { data: result },
             },
           });
 
@@ -785,7 +785,7 @@ function createGeminiSupabaseCallableTool(params: {
           parts.push({
             functionResponse: {
               name,
-              response: result as unknown as Record<string, unknown>,
+              response: { data: result },
             },
           });
 
@@ -801,7 +801,7 @@ function createGeminiSupabaseCallableTool(params: {
           parts.push({
             functionResponse: {
               name,
-              response: result as unknown as Record<string, unknown>,
+              response: { data: result },
             },
           });
 
@@ -817,7 +817,7 @@ function createGeminiSupabaseCallableTool(params: {
           parts.push({
             functionResponse: {
               name,
-              response: result as unknown as Record<string, unknown>,
+              response: { data: result },
             },
           });
 
@@ -827,9 +827,7 @@ function createGeminiSupabaseCallableTool(params: {
         parts.push({
           functionResponse: {
             name,
-            response: {
-              error: `Unknown tool: ${name}`,
-            },
+            response: { error: `Unknown tool: ${name}` },
           },
         });
       }
@@ -968,14 +966,6 @@ async function generateEpisodeWithTools(params: {
       toolConfig: {
         functionCallingConfig: {
           mode: FunctionCallingConfigMode.AUTO,
-          allowedFunctionNames: [
-            "db_select",
-            "rag_search_summaries",
-            "rag_search_chunks",
-            "upsert_character",
-            "upsert_location",
-            "insert_plot_seed",
-          ],
         },
       },
       systemInstruction,
@@ -1010,7 +1000,7 @@ async function main(): Promise<void> {
   const geminiApiKey = process.env.GEMINI_API_KEY;
   assert(geminiApiKey, "Missing required env: GEMINI_API_KEY");
 
-  const geminiModel = "gemini-2.0-flash";
+  const geminiModel = "gemini-3-flash-preview";
   const geminiEmbeddingModel = "text-embedding-004";
   const ragEmbeddingModelId = "gemini/text-embedding-004";
 
