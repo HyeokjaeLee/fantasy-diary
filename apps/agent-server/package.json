@@ -9,7 +9,7 @@
     "start": "bun src/index.ts",
     "run:daily": "bun src/index.ts --kind=daily",
     "run:daily:dry": "bun src/index.ts --kind=daily --dryRun=true",
-    "gcp:build": "gcloud builds submit . --project fantasy-diary --tag asia-northeast3-docker.pkg.dev/fantasy-diary/agent-server/agent-server:latest",
+    "gcp:build": "gcloud builds submit ../.. --project fantasy-diary --tag asia-northeast3-docker.pkg.dev/fantasy-diary/agent-server/agent-server:latest --file apps/agent-server/Dockerfile",
     "gcp:job:create": "gcloud run jobs create agent-server --project fantasy-diary --region asia-northeast3 --image asia-northeast3-docker.pkg.dev/fantasy-diary/agent-server/agent-server:latest",
     "gcp:job:update": "gcloud run jobs update agent-server --project fantasy-diary --region asia-northeast3 --image asia-northeast3-docker.pkg.dev/fantasy-diary/agent-server/agent-server:latest",
     "gcp:deploy": "bun run gcp:build && bun run gcp:job:update",
@@ -20,7 +20,8 @@
     "typecheck": "bun x tsc --noEmit"
   },
   "dependencies": {
-    "@fantasy-diary/shared": "workspace:*"
+    "@fantasy-diary/shared": "workspace:*",
+    "@google/genai": "^1.37.0"
   },
   "devDependencies": {
     "@fantasy-diary/configs": "workspace:*",

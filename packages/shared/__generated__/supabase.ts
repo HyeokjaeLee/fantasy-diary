@@ -62,6 +62,97 @@ export type Database = {
           },
         ]
       }
+      /** @table episode_chunks: 에피소드 기반 RAG를 위한 청크/요약 및 임베딩 저장(근거 검색용) */
+      episode_chunks: {
+        Row: {
+          /** @column episode_chunks.chunk_index: 같은 episode_id + chunk_kind 내 0부터 시작하는 인덱스 */
+          chunk_index: number
+          /** @column episode_chunks.chunk_kind: 청크 종류('episode': 에피소드 요약/대표, 'fact': 사실/설정 근거, 'style': 문체 예시) */
+          chunk_kind: string
+          /** @column episode_chunks.content: 임베딩 대상 텍스트(요약/근거 단락) */
+          content: string
+          /** @column episode_chunks.created_at: 생성 시각(기본값 now()) */
+          created_at: string
+          /** @column episode_chunks.embedding: 텍스트 임베딩(pgvector) */
+          embedding: string
+          /** @column episode_chunks.embedding_dim: 임베딩 차원(vector_dims(embedding)과 일치) */
+          embedding_dim: number
+          /** @column episode_chunks.embedding_model: 임베딩 모델 식별자(예: gemini/text-embedding-004) */
+          embedding_model: string
+          /** @column episode_chunks.episode_id: 소속 에피소드 ID (public.episodes.id) */
+          episode_id: string
+          /** @column episode_chunks.episode_no: 에피소드 번호(episodes.episode_no 복제, 정렬/필터용) */
+          episode_no: number
+          /** @column episode_chunks.id: 청크 ID (UUID, 기본값 gen_random_uuid()) */
+          id: string
+          /** @column episode_chunks.novel_id: 소속 소설 ID (public.novels.id) */
+          novel_id: string
+        }
+        Insert: {
+          /** @column episode_chunks.chunk_index: 같은 episode_id + chunk_kind 내 0부터 시작하는 인덱스 */
+          chunk_index: number
+          /** @column episode_chunks.chunk_kind: 청크 종류('episode': 에피소드 요약/대표, 'fact': 사실/설정 근거, 'style': 문체 예시) */
+          chunk_kind: string
+          /** @column episode_chunks.content: 임베딩 대상 텍스트(요약/근거 단락) */
+          content: string
+          /** @column episode_chunks.created_at: 생성 시각(기본값 now()) */
+          created_at?: string
+          /** @column episode_chunks.embedding: 텍스트 임베딩(pgvector) */
+          embedding: string
+          /** @column episode_chunks.embedding_dim: 임베딩 차원(vector_dims(embedding)과 일치) */
+          embedding_dim: number
+          /** @column episode_chunks.embedding_model: 임베딩 모델 식별자(예: gemini/text-embedding-004) */
+          embedding_model: string
+          /** @column episode_chunks.episode_id: 소속 에피소드 ID (public.episodes.id) */
+          episode_id: string
+          /** @column episode_chunks.episode_no: 에피소드 번호(episodes.episode_no 복제, 정렬/필터용) */
+          episode_no: number
+          /** @column episode_chunks.id: 청크 ID (UUID, 기본값 gen_random_uuid()) */
+          id?: string
+          /** @column episode_chunks.novel_id: 소속 소설 ID (public.novels.id) */
+          novel_id: string
+        }
+        Update: {
+          /** @column episode_chunks.chunk_index: 같은 episode_id + chunk_kind 내 0부터 시작하는 인덱스 */
+          chunk_index?: number
+          /** @column episode_chunks.chunk_kind: 청크 종류('episode': 에피소드 요약/대표, 'fact': 사실/설정 근거, 'style': 문체 예시) */
+          chunk_kind?: string
+          /** @column episode_chunks.content: 임베딩 대상 텍스트(요약/근거 단락) */
+          content?: string
+          /** @column episode_chunks.created_at: 생성 시각(기본값 now()) */
+          created_at?: string
+          /** @column episode_chunks.embedding: 텍스트 임베딩(pgvector) */
+          embedding?: string
+          /** @column episode_chunks.embedding_dim: 임베딩 차원(vector_dims(embedding)과 일치) */
+          embedding_dim?: number
+          /** @column episode_chunks.embedding_model: 임베딩 모델 식별자(예: gemini/text-embedding-004) */
+          embedding_model?: string
+          /** @column episode_chunks.episode_id: 소속 에피소드 ID (public.episodes.id) */
+          episode_id?: string
+          /** @column episode_chunks.episode_no: 에피소드 번호(episodes.episode_no 복제, 정렬/필터용) */
+          episode_no?: number
+          /** @column episode_chunks.id: 청크 ID (UUID, 기본값 gen_random_uuid()) */
+          id?: string
+          /** @column episode_chunks.novel_id: 소속 소설 ID (public.novels.id) */
+          novel_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "episode_chunks_episode_id_fkey"
+            columns: ["episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "episode_chunks_novel_id_fkey"
+            columns: ["novel_id"]
+            isOneToOne: false
+            referencedRelation: "novels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       /** @table episodes: 소설의 회차/에피소드(챕터) 본문 */
       episodes: {
         Row: {
@@ -161,6 +252,8 @@ export type Database = {
       /** @table novels: 소설(시리즈) 메타데이터 루트 엔티티 */
       novels: {
         Row: {
+          /** @column novels.brief: 소설 기획서/성경(JSONB). 예: {logline, premise, tone, pov, style_guide, characters[], locations[], plot_seeds[]} */
+          brief: Json
           /** @column novels.created_at: 생성 시각(기본값 now()) */
           created_at: string
           /** @column novels.genre: 장르(자유 텍스트) */
@@ -173,6 +266,8 @@ export type Database = {
           title: string
         }
         Insert: {
+          /** @column novels.brief: 소설 기획서/성경(JSONB). 예: {logline, premise, tone, pov, style_guide, characters[], locations[], plot_seeds[]} */
+          brief?: Json
           /** @column novels.created_at: 생성 시각(기본값 now()) */
           created_at?: string
           /** @column novels.genre: 장르(자유 텍스트) */
@@ -185,6 +280,8 @@ export type Database = {
           title: string
         }
         Update: {
+          /** @column novels.brief: 소설 기획서/성경(JSONB). 예: {logline, premise, tone, pov, style_guide, characters[], locations[], plot_seeds[]} */
+          brief?: Json
           /** @column novels.created_at: 생성 시각(기본값 now()) */
           created_at?: string
           /** @column novels.genre: 장르(자유 텍스트) */
@@ -364,62 +461,50 @@ export type Database = {
           },
         ]
       }
-      /** @table story_contexts: 소설별 컨텍스트 스냅샷/요약(JSONB) */
-      story_contexts: {
-        Row: {
-          /** @column story_contexts.context: 컨텍스트 JSONB (구조는 앱에서 정의) */
-          context: Json
-          /** @column story_contexts.created_at: 생성 시각(기본값 now()) */
-          created_at: string
-          /** @column story_contexts.id: 컨텍스트 ID (UUID, 기본값 gen_random_uuid()) */
-          id: string
-          /** @column story_contexts.novel_id: 소속 소설 ID (public.novels.id) */
-          novel_id: string
-        }
-        Insert: {
-          /** @column story_contexts.context: 컨텍스트 JSONB (구조는 앱에서 정의) */
-          context: Json
-          /** @column story_contexts.created_at: 생성 시각(기본값 now()) */
-          created_at?: string
-          /** @column story_contexts.id: 컨텍스트 ID (UUID, 기본값 gen_random_uuid()) */
-          id?: string
-          /** @column story_contexts.novel_id: 소속 소설 ID (public.novels.id) */
-          novel_id: string
-        }
-        Update: {
-          /** @column story_contexts.context: 컨텍스트 JSONB (구조는 앱에서 정의) */
-          context?: Json
-          /** @column story_contexts.created_at: 생성 시각(기본값 now()) */
-          created_at?: string
-          /** @column story_contexts.id: 컨텍스트 ID (UUID, 기본값 gen_random_uuid()) */
-          id?: string
-          /** @column story_contexts.novel_id: 소속 소설 ID (public.novels.id) */
-          novel_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "story_contexts_novel_id_fkey"
-            columns: ["novel_id"]
-            isOneToOne: false
-            referencedRelation: "novels"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      acquire_lock: {
-        Args: { name: string; owner: string; ttl_ms?: number }
-        Returns: boolean
+      match_episode_chunks: {
+        Args: {
+          p_chunk_kind: string
+          p_embedding_model?: string
+          p_match_count?: number
+          p_max_episode_no?: number
+          p_min_episode_no?: number
+          p_novel_id: string
+          p_query_embedding: string
+        }
+        Returns: {
+          chunk_index: number
+          chunk_kind: string
+          content: string
+          episode_id: string
+          episode_no: number
+          id: string
+          similarity: number
+        }[]
       }
-      extend_lock: {
-        Args: { name: string; owner: string; ttl_ms?: number }
-        Returns: boolean
+      match_episode_summaries: {
+        Args: {
+          p_embedding_model?: string
+          p_match_count?: number
+          p_max_episode_no?: number
+          p_min_episode_no?: number
+          p_novel_id: string
+          p_query_embedding: string
+        }
+        Returns: {
+          chunk_index: number
+          chunk_kind: string
+          content: string
+          episode_id: string
+          episode_no: number
+          id: string
+          similarity: number
+        }[]
       }
-      release_lock: { Args: { name: string; owner: string }; Returns: boolean }
     }
     Enums: {
       [_ in never]: never

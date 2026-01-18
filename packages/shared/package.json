@@ -6,7 +6,8 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./supabase": "./__generated__/supabase.ts"
+    "./supabase": "./__generated__/supabase.ts",
+    "./supabase-client": "./src/supabase-client.ts"
   },
   "scripts": {
     "lint": "eslint .",
@@ -16,7 +17,6 @@
     "env:pull": "doppler secrets download --project shared --config dev --format env --no-file > .env"
   },
   "dependencies": {
-    "@google/genai": "^1.25.0",
     "@supabase/supabase-js": "^2.76.1",
     "es-toolkit": "^1.40.0",
     "ky": "^1.12.0",

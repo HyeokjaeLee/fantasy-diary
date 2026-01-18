@@ -1,1 +1,1 @@
-export {};
+export { createSupabaseAdminClient, createSupabasePublishableClient } from "./supabase-client";
