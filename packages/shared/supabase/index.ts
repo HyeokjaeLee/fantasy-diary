@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { assert } from "es-toolkit";
 
 import type { Database } from "./type";
 
@@ -10,21 +11,18 @@ type CreateSupabaseClientParams = {
   env?: EnvLike;
 };
 
-function requireEnv(env: EnvLike, name: string): string {
-  const value = env[name];
-  if (!value) throw new Error(`Missing required env: ${name}`);
-
-  return value;
-}
-
 export function createSupabaseAdminClient(
   params: CreateSupabaseClientParams = {}
 ): SupabaseClient<Database> {
   const env = params.env ?? (process.env as EnvLike);
 
-  const url = params.url ?? requireEnv(env, "SUPABASE_URL");
+  const projectId = env.SUPABASE_PROJECT_ID;
+  assert(projectId, "Missing required env: SUPABASE_PROJECT_ID");
+
+  const url = params.url ?? `https://${projectId}.supabase.co`;
   const key =
-    params.key ?? requireEnv(env, "SUPABASE_SERVICE_ROLE_KEY");
+    params.key ?? env.SUPABASE_SECRET_KEY ?? env.SUPABASE_SERVICE_ROLE_KEY;
+  assert(key, "Missing required env: SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY");
 
   return createClient<Database>(url, key, {
     auth: {
@@ -40,12 +38,12 @@ export function createSupabasePublishableClient(
 ): SupabaseClient<Database> {
   const env = params.env ?? (process.env as EnvLike);
 
-  const url = params.url ?? requireEnv(env, "SUPABASE_URL");
-  const key =
-    params.key ??
-    env.SUPABASE_PUBLISHABLE_KEY ??
-    env.SUPABASE_ANON_KEY ??
-    requireEnv(env, "SUPABASE_PUBLISHABLE_KEY");
+  const projectId = env.SUPABASE_PROJECT_ID;
+  assert(projectId, "Missing required env: SUPABASE_PROJECT_ID");
+
+  const url = params.url ?? `https://${projectId}.supabase.co`;
+  const key = params.key ?? env.SUPABASE_PUBLISHABLE_KEY ?? env.SUPABASE_ANON_KEY;
+  assert(key, "Missing required env: SUPABASE_PUBLISHABLE_KEY or SUPABASE_ANON_KEY");
 
   return createClient<Database>(url, key, {
     auth: {

@@ -8,6 +8,7 @@ import {
   type Part,
   Type,
 } from "@google/genai";
+import { assert } from "es-toolkit";
 
 type ArgMap = Record<string, string | boolean>;
 
@@ -102,12 +103,6 @@ function parseArgs(argv: string[]): { args: ArgMap; positionals: string[] } {
   return { args, positionals };
 }
 
-function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required env: ${name}`);
-
-  return value;
-}
 
 function toBoolean(
   value: string | boolean | undefined,
@@ -1012,24 +1007,12 @@ async function main(): Promise<void> {
   const novelId = typeof args.novelId === "string" ? args.novelId : undefined;
   const dryRun = toBoolean(args.dryRun, false);
 
-  const geminiApiKey = requireEnv("GEMINI_API_KEY");
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  assert(geminiApiKey, "Missing required env: GEMINI_API_KEY");
 
-  const geminiModel =
-    typeof process.env.GEMINI_MODEL === "string" && process.env.GEMINI_MODEL.length > 0
-      ? process.env.GEMINI_MODEL
-      : "gemini-2.0-flash";
-
-  const geminiEmbeddingModel =
-    typeof process.env.GEMINI_EMBEDDING_MODEL === "string" &&
-    process.env.GEMINI_EMBEDDING_MODEL.length > 0
-      ? process.env.GEMINI_EMBEDDING_MODEL
-      : "text-embedding-004";
-
-  const ragEmbeddingModelId =
-    typeof process.env.RAG_EMBEDDING_MODEL_ID === "string" &&
-    process.env.RAG_EMBEDDING_MODEL_ID.length > 0
-      ? process.env.RAG_EMBEDDING_MODEL_ID
-      : `gemini/${geminiEmbeddingModel}`;
+  const geminiModel = "gemini-2.0-flash";
+  const geminiEmbeddingModel = "text-embedding-004";
+  const ragEmbeddingModelId = "gemini/text-embedding-004";
 
   const supabase = createSupabaseAdminClient();
 
