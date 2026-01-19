@@ -277,6 +277,11 @@ function buildConnectionTargets(params: {
   return params.prefer === "direct" ? [direct, pooler] : [pooler, direct];
 }
 
+type DbConnectFailure = {
+  attempt: string;
+  message: string;
+};
+
 async function fetchSchemaComments(params: {
   schema: string;
   projectId: string;
@@ -288,6 +293,7 @@ async function fetchSchemaComments(params: {
   columnComments: Map<string, Map<string, string>>;
   lastAttempt?: string;
   error?: unknown;
+  failures: DbConnectFailure[];
 }> {
   const targets = buildConnectionTargets({
     projectId: params.projectId,
@@ -297,6 +303,7 @@ async function fetchSchemaComments(params: {
 
   let lastError: unknown = null;
   let lastAttempt: string | undefined;
+  const failures: DbConnectFailure[] = [];
 
   for (const target of targets) {
     lastAttempt = `${target.label} (${target.username}@${target.host}:${target.port})`;
@@ -309,6 +316,7 @@ async function fetchSchemaComments(params: {
       database: "postgres",
       tls: { serverName: target.serverName },
       connectionTimeout: 10,
+      prepare: false,
     });
 
     try {
@@ -344,11 +352,26 @@ async function fetchSchemaComments(params: {
         tableComments: getTableCommentsFromRows(tableRows),
         columnComments: getColumnCommentsFromRows(columnRows),
         lastAttempt,
+        failures,
       };
     } catch (err) {
       lastError = err;
 
-      const message = err instanceof Error ? err.message : String(err);
+      const message = (() => {
+        if (err instanceof SQL.PostgresError) {
+          return [
+            err.message,
+            err.code ? `code=${err.code}` : "",
+            err.detail ? `detail=${err.detail}` : "",
+            err.hint ? `hint=${err.hint}` : "",
+          ]
+            .filter(Boolean)
+            .join(" | ");
+        }
+        return err instanceof Error ? err.message : String(err);
+      })();
+
+      failures.push({ attempt: lastAttempt ?? target.label, message });
       const authError =
         message.includes("password authentication failed") ||
         message.includes("Too many authentication errors") ||
@@ -369,6 +392,7 @@ async function fetchSchemaComments(params: {
     columnComments: new Map(),
     lastAttempt,
     error: lastError,
+    failures,
   };
 }
 
@@ -399,6 +423,7 @@ async function main(): Promise<void> {
     columnComments,
     lastAttempt,
     error,
+    failures,
   } = await fetchSchemaComments({
     schema: options.schema,
     projectId: options.projectId,
@@ -426,6 +451,15 @@ async function main(): Promise<void> {
       const message = error instanceof Error ? error.message : String(error);
       lines.push(`Reason: ${message}`);
     }
+
+    if (failures.length > 0) {
+      lines.push("Attempts:");
+      for (const failure of failures) {
+        const oneLine = failure.message.split("\n").join(" ").trim();
+        lines.push(`- ${failure.attempt}: ${oneLine}`);
+      }
+    }
+
     console.warn(lines.join("\n"));
   }
 }

@@ -63,6 +63,9 @@ type InsertPlotSeedArgs = {
   novel_id: string;
   title: string;
   detail: string;
+  introduced_in_episode_id?: string;
+  character_names?: string[];
+  location_names?: string[];
 };
 
 type GenerateResult = {
@@ -125,12 +128,14 @@ function toBoolean(
 
 function safeJsonStringify(value: unknown): string {
   const seen = new WeakSet<object>();
+
   return JSON.stringify(value, (_k, v) => {
     if (typeof v === "bigint") return v.toString();
     if (typeof v === "object" && v !== null) {
       if (seen.has(v)) return "[Circular]";
       seen.add(v);
     }
+
     return v;
   });
 }
@@ -193,7 +198,7 @@ function createLogger(params: { quiet: boolean; debug: boolean }): Logger {
 
     if (level === "error") console.error(line);
     else if (level === "warn") console.warn(line);
-    else console.log(line);
+    else console.info(line);
   }
 
   return {
@@ -641,19 +646,126 @@ async function insertPlotSeed(params: {
   if (!title) throw new Error("insert_plot_seed: title is required");
   if (!detail) throw new Error("insert_plot_seed: detail is required");
 
-  const { data, error } = await params.supabase
-    .from("plot_seeds")
-    .insert({
-      novel_id: novelId,
-      title,
-      detail,
-      status: "open",
-    })
-    .select("id,title,status")
-    .single();
+  const introducedInEpisodeId =
+    typeof params.args.introduced_in_episode_id === "string"
+      ? params.args.introduced_in_episode_id.trim()
+      : "";
 
-  if (error) throw new Error(`insert_plot_seed: ${error.message}`);
-  if (!data) throw new Error("insert_plot_seed: insert failed");
+  const { data: existing, error: existingError } = await params.supabase
+    .from("plot_seeds")
+    .select("id,title,status,detail,introduced_in_episode_id")
+    .eq("novel_id", novelId)
+    .eq("title", title)
+    .eq("status", "open")
+    .limit(1);
+
+  if (existingError)
+    throw new Error(`insert_plot_seed: select existing: ${existingError.message}`);
+
+  const current = existing?.[0];
+
+  let data: { id: string; title: string; status: string };
+
+  if (!current) {
+    const { data: inserted, error } = await params.supabase
+      .from("plot_seeds")
+      .insert({
+        novel_id: novelId,
+        title,
+        detail,
+        status: "open",
+        introduced_in_episode_id: introducedInEpisodeId || null,
+      })
+      .select("id,title,status")
+      .single();
+
+    if (error) throw new Error(`insert_plot_seed: ${error.message}`);
+    if (!inserted) throw new Error("insert_plot_seed: insert failed");
+
+    data = inserted;
+  } else {
+    const patch: Record<string, unknown> = {};
+
+    if (typeof current.detail === "string" && current.detail !== detail) {
+      patch.detail = detail;
+    }
+
+    if (!current.introduced_in_episode_id && introducedInEpisodeId) {
+      patch.introduced_in_episode_id = introducedInEpisodeId;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      const { error } = await params.supabase
+        .from("plot_seeds")
+        .update(patch)
+        .eq("id", current.id);
+
+      if (error) throw new Error(`insert_plot_seed: update existing: ${error.message}`);
+    }
+
+    data = { id: current.id, title: current.title, status: current.status };
+  }
+
+  const characterNames = Array.from(
+    new Set((params.args.character_names ?? []).map((n) => n.trim()).filter(Boolean))
+  );
+  const locationNames = Array.from(
+    new Set((params.args.location_names ?? []).map((n) => n.trim()).filter(Boolean))
+  );
+
+  if (characterNames.length > 0) {
+    const { data: characters, error: characterError } = await params.supabase
+      .from("characters")
+      .select("id,name")
+      .eq("novel_id", novelId)
+      .in("name", characterNames);
+
+    if (characterError)
+      throw new Error(`insert_plot_seed: load characters: ${characterError.message}`);
+
+    const rows = (characters ?? []).map((c) => ({
+      plot_seed_id: data.id,
+      character_id: c.id,
+    }));
+
+    if (rows.length > 0) {
+      const { error: linkError } = await params.supabase
+        .from("plot_seed_characters")
+        .upsert(rows, { onConflict: "plot_seed_id,character_id" });
+
+      if (linkError)
+        throw new Error(
+          `insert_plot_seed: link characters: ${linkError.message}`
+        );
+    }
+  }
+
+  if (locationNames.length > 0) {
+    const { data: locations, error: locationError } = await params.supabase
+      .from("locations")
+      .select("id,name")
+      .eq("novel_id", novelId)
+      .in("name", locationNames);
+
+    if (locationError)
+      throw new Error(`insert_plot_seed: load locations: ${locationError.message}`);
+
+    const rows = (locations ?? []).map((l) => ({
+      plot_seed_id: data.id,
+      location_id: l.id,
+    }));
+
+    if (rows.length > 0) {
+      const { error: linkError } = await params.supabase
+        .from("plot_seed_locations")
+        .upsert(rows, { onConflict: "plot_seed_id,location_id" });
+
+      if (linkError)
+        throw new Error(
+          `insert_plot_seed: link locations: ${linkError.message}`
+        );
+    }
+  }
 
   return data;
 }
@@ -665,6 +777,7 @@ function createGeminiSupabaseCallableTool(params: {
   ragEmbeddingModelId: string;
   logger: Logger;
 }) {
+  const createdPlotSeedIds: string[] = [];
   const declarations: FunctionDeclaration[] = [
     {
       name: "db_select",
@@ -786,24 +899,42 @@ function createGeminiSupabaseCallableTool(params: {
         required: ["novel_id", "name", "profile"],
       },
     },
-    {
-      name: "insert_plot_seed",
-      description:
-        "Create a new open plot seed (떡밥). Use when introducing unresolved hooks that should persist.",
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          novel_id: { type: Type.STRING },
-          title: { type: Type.STRING },
-          detail: { type: Type.STRING },
-        },
-        required: ["novel_id", "title", "detail"],
-      },
-    },
+     {
+       name: "insert_plot_seed",
+       description:
+         "Create a new open plot seed (떡밥). Use when introducing unresolved hooks that should persist.",
+       parameters: {
+         type: Type.OBJECT,
+         properties: {
+           novel_id: { type: Type.STRING },
+           title: { type: Type.STRING },
+           detail: { type: Type.STRING },
+           introduced_in_episode_id: {
+             type: Type.STRING,
+             description:
+               "Optional episode id where this plot seed was introduced (episodes.id).",
+           },
+           character_names: {
+             type: Type.ARRAY,
+             description:
+               "Optional character names related to this plot seed. Must match existing characters.name.",
+             items: { type: Type.STRING },
+           },
+           location_names: {
+             type: Type.ARRAY,
+             description:
+               "Optional location names related to this plot seed. Must match existing locations.name.",
+             items: { type: Type.STRING },
+           },
+         },
+         required: ["novel_id", "title", "detail"],
+       },
+     },
   ];
 
   return {
     tool: async () => ({ functionDeclarations: declarations }),
+    getCreatedPlotSeedIds: (): string[] => Array.from(new Set(createdPlotSeedIds)),
     callTool: async (calls: FunctionCall[]): Promise<Part[]> => {
       const parts: Part[] = [];
 
@@ -914,6 +1045,8 @@ function createGeminiSupabaseCallableTool(params: {
             args: call.args as unknown as InsertPlotSeedArgs,
           });
 
+          createdPlotSeedIds.push(result.id);
+
           parts.push({
             functionResponse: {
               name,
@@ -977,6 +1110,25 @@ async function insertEpisode(params: {
   return data;
 }
 
+async function markPlotSeedsIntroduced(params: {
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+  novelId: string;
+  episodeId: string;
+  plotSeedIds: string[];
+}): Promise<void> {
+  const ids = Array.from(new Set(params.plotSeedIds)).filter((id) => id.trim().length > 0);
+  if (ids.length === 0) return;
+
+  const { error } = await params.supabase
+    .from("plot_seeds")
+    .update({ introduced_in_episode_id: params.episodeId })
+    .eq("novel_id", params.novelId)
+    .is("introduced_in_episode_id", null)
+    .in("id", ids);
+
+  if (error) throw new Error(`markPlotSeedsIntroduced: ${error.message}`);
+}
+
 async function indexEpisodeSummary(params: {
   supabase: ReturnType<typeof createSupabaseAdminClient>;
   novelId: string;
@@ -1031,6 +1183,93 @@ async function resolvePlotSeeds(params: {
   if (error) throw new Error(`resolvePlotSeeds: ${error.message}`);
 }
 
+function containsEpisodeMeta(text: string): boolean {
+  const normalized = text.replaceAll(" ", "");
+
+  const patterns: RegExp[] = [
+    /\d+회차/,
+    /\d+화/,
+    /지난회차/,
+    /이전회차/,
+    /전회차/,
+    /지난화/,
+    /이전화/,
+    /전편/,
+    /이전편/,
+  ];
+
+  return patterns.some((p) => p.test(normalized));
+}
+
+function getErrorStatus(err: unknown): number | undefined {
+  if (!err || typeof err !== "object") return undefined;
+
+  const record = err as { status?: unknown };
+  return typeof record.status === "number" ? record.status : undefined;
+}
+
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return typeof err === "string" ? err : "";
+}
+
+function isRetryableGeminiError(err: unknown): boolean {
+  const status = getErrorStatus(err);
+  if (status === 429 || status === 503) return true;
+
+  const message = getErrorMessage(err).toLowerCase();
+
+  if (message.includes("overloaded") || message.includes("unavailable")) return true;
+  if (message.includes("quota") || message.includes("resource_exhausted")) return true;
+  if (message.includes("\"code\":429") || message.includes("\"code\":503")) return true;
+  if (message.includes("gemini returned empty text")) return true;
+
+  return false;
+}
+
+function getGeminiRetryDelayMs(err: unknown): number | undefined {
+  const message = getErrorMessage(err);
+
+  const retryInMatch = message.match(/retry in ([0-9.]+)s/i);
+  if (retryInMatch) {
+    const seconds = Number(retryInMatch[1]);
+    return Number.isFinite(seconds) ? Math.ceil(seconds * 1000) : undefined;
+  }
+
+  const retryDelayMatch = message.match(/"retryDelay":"(\d+)s"/);
+  if (retryDelayMatch) {
+    const seconds = Number(retryDelayMatch[1]);
+    return Number.isFinite(seconds) ? Math.ceil(seconds * 1000) : undefined;
+  }
+
+  return undefined;
+}
+
+async function sendGeminiWithRetry<T>(
+  params: {
+    send: () => Promise<T>;
+    maxAttempts: number;
+  }
+): Promise<T> {
+  const baseDelayMs = 700;
+
+  for (let attempt = 1; attempt <= params.maxAttempts; attempt++) {
+    try {
+      return await params.send();
+    } catch (err) {
+      if (!isRetryableGeminiError(err) || attempt === params.maxAttempts) throw err;
+
+      const jitter = Math.floor(Math.random() * 250);
+      const retryDelayMs = getGeminiRetryDelayMs(err);
+      const delayMs = retryDelayMs ?? baseDelayMs * 2 ** (attempt - 1) + jitter;
+
+      await Bun.sleep(Math.min(65_000, delayMs));
+    }
+  }
+
+  throw new Error("Unreachable");
+}
+
 async function generateEpisodeWithTools(params: {
   ai: GoogleGenAI;
   model: string;
@@ -1047,13 +1286,16 @@ async function generateEpisodeWithTools(params: {
     "- novels: title/genre/brief(기획서)",
     "- characters, locations: 있으면 설정으로 사용",
     "- plot_seeds(status=open): 있으면 떡밥으로 사용",
-    "- episodes: 필요한 과거 회차 원문(근거 단락 인용 목적)",
+    "- episodes: 필요한 과거 회차 원문(일관성 유지 목적)",
     "novels.brief가 비어있지 않으면 그 내용이 작품의 성경이다.",
+    "brief는 현재 다음 구조를 가진다(예시): cast(protagonist, key_characters[]), locations[], initial_plot_seeds[].",
     "characters/locations/plot_seeds가 비어 있어도 novels.brief의 정보를 우선 사용해 세계관을 세팅해라.",
     "캐릭터/장소/떡밥은 반드시 필요할 때만 생성/업데이트하라(등장/언급/서사적으로 의미가 생길 때). 가능한 한 먼저 novels.brief와 기존 DB 데이터를 재사용하라.",
     "정말로 필요할 때만 아래 write tools를 사용해라(최소 호출): upsert_character, upsert_location, insert_plot_seed.",
+    "insert_plot_seed를 호출할 때 관련 캐릭터/장소가 있으면 character_names/location_names를 함께 넘겨 조인 테이블을 연결해라.",
     "novels.brief는 변경하지 마라. brief는 기획서(성경)로 고정이다.",
-    "과거 회차가 있으면 rag_search_summaries로 후보 회차를 좁힌 뒤 episodes를 조회해서 근거 단락을 찾아라.",
+    "메타 표현 금지: 본문에 '1회차/2회차/1화/2화/지난 회차/이전 회차/전 회차/지난 화/이전 화/전편' 같은 회차 라벨을 절대 쓰지 마라.",
+    "과거 사건은 '지난밤/아까/조금 전/그때'처럼 이야기 안에서 자연스럽게 이어서 써라.",
     "출력은 반드시 JSON만 허용한다(마크다운/코드펜스 금지).",
     "반드시 아래 스키마를 지켜라:",
     '{\n  "episode_content": string,\n  "resolved_plot_seed_ids"?: string[]\n}',
@@ -1076,18 +1318,41 @@ async function generateEpisodeWithTools(params: {
     `대상 소설 ID: ${params.novelId}`,
     `이번에 작성할 회차 번호: ${params.episodeNo}`,
     `이전 회차 최대 번호: ${params.maxEpisodeNo}`,
-    "Supabase에서 데이터를 조회하고, 근거 단락을 포함해 일관성 있게 작성하라.",
+    "Supabase에서 데이터를 조회하고, 앞뒤가 끊기지 않게 자연스럽게 이어서 써라.",
+    "회차 번호/회차 라벨(예: 1회차, 2화, 지난 회차) 언급은 금지다.",
   ].join("\n");
 
-  const response = await chat.sendMessage({ message });
-  const text = response.text;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const response = await sendGeminiWithRetry({
+      maxAttempts: 5,
+      send: async () => {
+        const next = await chat.sendMessage({
+          message:
+            attempt === 1
+              ? message
+              : "직전 출력이 규칙을 위반했다. 회차 라벨/메타 표현을 완전히 제거하고, 사건/감정/상황으로만 자연스럽게 이어지게 다시 작성해라. JSON만 출력.",
+        });
 
-  if (typeof text !== "string" || text.trim().length === 0)
-    throw new Error("Gemini returned empty text");
+        const text = next.text;
+        if (typeof text !== "string" || text.trim().length === 0)
+          throw new Error("Gemini returned empty text");
 
-  const json = extractFirstJsonObject(text);
+        return next;
+      },
+    });
+    const text = response.text;
+    if (typeof text !== "string" || text.trim().length === 0)
+      throw new Error("Gemini returned empty text");
 
-  return assertGenerateResult(json);
+    const json = extractFirstJsonObject(text);
+    const generated = assertGenerateResult(json);
+
+    if (!containsEpisodeMeta(generated.episode_content)) return generated;
+
+    if (attempt === 2) throw new Error("Generated episode contains episode-label meta references");
+  }
+
+  throw new Error("Unreachable");
 }
 
 async function main(): Promise<void> {
@@ -1114,13 +1379,6 @@ async function main(): Promise<void> {
 
   const ai = new GoogleGenAI({ apiKey: geminiApiKey });
 
-  const tool = createGeminiSupabaseCallableTool({
-    supabase,
-    geminiApiKey,
-    geminiEmbeddingModel,
-    ragEmbeddingModelId,
-    logger,
-  });
 
   const targetNovelIds: string[] = [];
 
@@ -1147,6 +1405,14 @@ async function main(): Promise<void> {
 
     const episodeNo = await getNextEpisodeNo({ supabase, novelId: targetNovelId });
     const maxEpisodeNo = episodeNo - 1;
+
+    const tool = createGeminiSupabaseCallableTool({
+      supabase,
+      geminiApiKey,
+      geminiEmbeddingModel,
+      ragEmbeddingModelId,
+      logger,
+    });
 
     logger.info("episode.generate.start", {
       novelId: targetNovelId,
@@ -1196,6 +1462,13 @@ async function main(): Promise<void> {
       episodeId: episode.id,
     });
 
+    await markPlotSeedsIntroduced({
+      supabase,
+      novelId: targetNovelId,
+      episodeId: episode.id,
+      plotSeedIds: tool.getCreatedPlotSeedIds(),
+    });
+
     await indexEpisodeSummary({
       supabase,
       novelId: targetNovelId,
@@ -1238,7 +1511,7 @@ async function main(): Promise<void> {
   }
 
   logger.info("run.done", { count: results.length });
-  console.log(JSON.stringify({ ok: true, results }, null, 2));
+  console.info(JSON.stringify({ ok: true, results }, null, 2));
 }
 
 main().catch((err) => {
