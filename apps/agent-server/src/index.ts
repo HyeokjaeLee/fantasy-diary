@@ -1,4 +1,6 @@
 import { createSupabaseAdminClient } from "@fantasy-diary/shared/supabase";
+import type { Database, TablesInsert } from "@fantasy-diary/shared/supabase/type";
+import { SupabaseZod } from "@fantasy-diary/shared/supabase/zod";
 import {
   type FunctionCall,
   FunctionCallingConfigMode,
@@ -12,20 +14,25 @@ import { z } from "zod";
 
 type ArgMap = Record<string, string | boolean>;
 
+const allowedDbTables = [
+  "novels",
+  "episodes",
+  "characters",
+  "locations",
+  "plot_seeds",
+  "plot_seed_characters",
+  "plot_seed_locations",
+  "episode_chunks",
+] as const satisfies ReadonlyArray<keyof Database["public"]["Tables"]>;
+
+type AllowedDbTable = (typeof allowedDbTables)[number];
+
 type SupabaseFilter =
   | { column: string; op: "eq" | "gte" | "lte" | "like" | "ilike"; value: string }
   | { column: string; op: "in"; value: string[] };
 
 type DbSelectArgs = {
-  table:
-    | "novels"
-    | "episodes"
-    | "characters"
-    | "locations"
-    | "plot_seeds"
-    | "plot_seed_characters"
-    | "plot_seed_locations"
-    | "episode_chunks";
+  table: AllowedDbTable;
   select?: string;
   filters?: SupabaseFilter[];
   order?: { column: string; ascending?: boolean };
@@ -47,28 +54,44 @@ type RagSearchChunksArgs = {
   match_count?: number;
 };
 
-type UpsertCharacterArgs = {
-  novel_id: string;
-  name: string;
-  personality: string;
-  gender: "male" | "female";
-  birthday: string;
-};
+type UpsertCharacterArgs = Pick<
+  TablesInsert<"characters">,
+  "novel_id" | "name" | "personality" | "gender" | "birthday"
+>;
 
-type UpsertLocationArgs = {
-  novel_id: string;
-  name: string;
-  situation: string;
-};
+const UpsertCharacterArgsSchema = SupabaseZod.public.Tables.characters.Insert.pick({
+  novel_id: true,
+  name: true,
+  personality: true,
+  gender: true,
+  birthday: true,
+}).strict();
 
-type InsertPlotSeedArgs = {
-  novel_id: string;
-  title: string;
-  detail: string;
-  introduced_in_episode_id?: string;
+type UpsertLocationArgs = Pick<
+  TablesInsert<"locations">,
+  "novel_id" | "name" | "situation"
+>;
+
+const UpsertLocationArgsSchema = SupabaseZod.public.Tables.locations.Insert.pick({
+  novel_id: true,
+  name: true,
+  situation: true,
+}).strict();
+
+type InsertPlotSeedArgs = Pick<
+  TablesInsert<"plot_seeds">,
+  "novel_id" | "title" | "detail" | "introduced_in_episode_id"
+> & {
   character_names?: string[];
   location_names?: string[];
 };
+
+const InsertPlotSeedArgsSchema = SupabaseZod.public.Tables.plot_seeds.Insert.pick({
+  novel_id: true,
+  title: true,
+  detail: true,
+  introduced_in_episode_id: true,
+}).strict();
 
 type GenerateResult = {
   episode_content: string;
@@ -336,18 +359,7 @@ async function dbSelect(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   params: DbSelectArgs
 ): Promise<unknown> {
-  const allowedTables: Array<DbSelectArgs["table"]> = [
-    "novels",
-    "episodes",
-    "characters",
-    "locations",
-    "plot_seeds",
-    "plot_seed_characters",
-    "plot_seed_locations",
-    "episode_chunks",
-  ];
-
-  if (!allowedTables.includes(params.table)) {
+  if (!allowedDbTables.includes(params.table)) {
     throw new Error(`db_select: unsupported table: ${String(params.table)}`);
   }
 
@@ -484,17 +496,23 @@ async function upsertCharacter(params: {
   supabase: ReturnType<typeof createSupabaseAdminClient>;
   args: UpsertCharacterArgs;
 }): Promise<{ id: string; name: string }> {
-  const novelId = params.args.novel_id;
-  const name = params.args.name.trim();
+  const parsed = UpsertCharacterArgsSchema.parse({
+    ...params.args,
+    novel_id: params.args.novel_id.trim(),
+    birthday: params.args.birthday.trim(),
+  });
 
-  if (!novelId) throw new Error("upsert_character: novel_id is required");
+  const novelId = parsed.novel_id;
+  const name = parsed.name.trim();
+
   if (!name) throw new Error("upsert_character: name is required");
-  const personality = toRequiredString(params.args.personality, "upsert_character: personality");
-  const gender = params.args.gender;
-  const birthday = toRequiredString(params.args.birthday, "upsert_character: birthday");
 
-  if (gender !== "male" && gender !== "female")
-    throw new Error(`upsert_character: invalid gender: ${gender}`);
+  const personality = toRequiredString(
+    parsed.personality,
+    "upsert_character: personality"
+  );
+  const gender = parsed.gender;
+  const birthday = toRequiredString(parsed.birthday, "upsert_character: birthday");
 
   const { data: existing, error: existingError } = await params.supabase
     .from("characters")
@@ -543,12 +561,16 @@ async function upsertLocation(params: {
   supabase: ReturnType<typeof createSupabaseAdminClient>;
   args: UpsertLocationArgs;
 }): Promise<{ id: string; name: string }> {
-  const novelId = params.args.novel_id;
-  const name = params.args.name.trim();
+  const parsed = UpsertLocationArgsSchema.parse({
+    ...params.args,
+    novel_id: params.args.novel_id.trim(),
+  });
 
-  const situation = toRequiredString(params.args.situation, "upsert_location: situation");
+  const novelId = parsed.novel_id;
+  const name = parsed.name.trim();
 
-  if (!novelId) throw new Error("upsert_location: novel_id is required");
+  const situation = toRequiredString(parsed.situation, "upsert_location: situation");
+
   if (!name) throw new Error("upsert_location: name is required");
 
   const { data: existing, error: existingError } = await params.supabase
@@ -596,18 +618,26 @@ async function insertPlotSeed(params: {
   supabase: ReturnType<typeof createSupabaseAdminClient>;
   args: InsertPlotSeedArgs;
 }): Promise<{ id: string; title: string; status: string }> {
-  const novelId = params.args.novel_id;
-  const title = params.args.title.trim();
-  const detail = params.args.detail.trim();
+  const rawIntroducedInEpisodeId = params.args.introduced_in_episode_id;
 
-  if (!novelId) throw new Error("insert_plot_seed: novel_id is required");
+  const parsed = InsertPlotSeedArgsSchema.parse({
+    novel_id: params.args.novel_id.trim(),
+    title: params.args.title,
+    detail: params.args.detail,
+    introduced_in_episode_id:
+      typeof rawIntroducedInEpisodeId === "string"
+        ? rawIntroducedInEpisodeId.trim() || undefined
+        : rawIntroducedInEpisodeId,
+  });
+
+  const novelId = parsed.novel_id;
+  const title = parsed.title.trim();
+  const detail = parsed.detail.trim();
+
   if (!title) throw new Error("insert_plot_seed: title is required");
   if (!detail) throw new Error("insert_plot_seed: detail is required");
 
-  const introducedInEpisodeId =
-    typeof params.args.introduced_in_episode_id === "string"
-      ? params.args.introduced_in_episode_id.trim()
-      : "";
+  const introducedInEpisodeId = parsed.introduced_in_episode_id ?? null;
 
   const { data: existing, error: existingError } = await params.supabase
     .from("plot_seeds")
@@ -632,7 +662,7 @@ async function insertPlotSeed(params: {
         title,
         detail,
         status: "open",
-        introduced_in_episode_id: introducedInEpisodeId || null,
+        introduced_in_episode_id: introducedInEpisodeId,
       })
       .select("id,title,status")
       .single();
@@ -837,7 +867,7 @@ function createGeminiSupabaseCallableTool(params: {
           gender: {
             type: Type.STRING,
             description: "male|female",
-            enum: ["male", "female"],
+            enum: Array.from(SupabaseZod.public.Enums.gender.options),
           },
           birthday: {
             type: Type.STRING,
