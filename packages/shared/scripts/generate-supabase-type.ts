@@ -68,6 +68,7 @@ function insertTableCommentJSDoc(params: {
 }
 
 function findMatchingBraceIndex(source: string, openBraceIndex: number): number | null {
+
   let depth = 0;
   for (let i = openBraceIndex; i < source.length; i++) {
     const ch = source[i];
@@ -77,6 +78,7 @@ function findMatchingBraceIndex(source: string, openBraceIndex: number): number 
       if (depth === 0) return i;
     }
   }
+
   return null;
 }
 
@@ -368,6 +370,7 @@ async function fetchSchemaComments(params: {
             .filter(Boolean)
             .join(" | ");
         }
+
         return err instanceof Error ? err.message : String(err);
       })();
 
@@ -398,9 +401,11 @@ async function fetchSchemaComments(params: {
 
 function requireEnv(key: string): string {
   const value = process.env[key];
+
   if (!value) {
     throw new Error(`Missing env var: ${key}`);
   }
+
   return value;
 }
 

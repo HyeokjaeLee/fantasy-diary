@@ -1,5 +1,4 @@
 import { createSupabaseAdminClient } from "@fantasy-diary/shared/supabase";
-import type { Json } from "@fantasy-diary/shared/supabase/type";
 import {
   type FunctionCall,
   FunctionCallingConfigMode,
@@ -50,13 +49,15 @@ type RagSearchChunksArgs = {
 type UpsertCharacterArgs = {
   novel_id: string;
   name: string;
-  profile: unknown;
+  personality: string;
+  gender: "male" | "female";
+  birthday: string;
 };
 
 type UpsertLocationArgs = {
   novel_id: string;
   name: string;
-  profile: unknown;
+  situation: string;
 };
 
 type InsertPlotSeedArgs = {
@@ -306,49 +307,11 @@ async function geminiEmbedText(params: {
   return numbers;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
+function toRequiredString(value: unknown, label: string): string {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) throw new Error(`${label} is required`);
 
-function toJson(value: unknown, depth = 0): Json {
-  if (depth > 20) throw new Error("JSON value too deep");
-  if (value === null) return null;
-
-  if (typeof value === "string") return value;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value))
-      throw new Error("JSON number must be finite");
-
-    return value;
-  }
-  if (typeof value === "boolean") return value;
-
-  if (Array.isArray(value)) {
-    const list: Json[] = [];
-    for (const item of value) list.push(toJson(item, depth + 1));
-
-    return list;
-  }
-
-  if (isPlainObject(value)) {
-    const obj: Record<string, Json> = {};
-    for (const [key, raw] of Object.entries(value)) {
-      if (raw === undefined) continue;
-      obj[key] = toJson(raw, depth + 1);
-    }
-
-    return obj;
-  }
-
-  throw new Error("Value is not JSON-serializable");
-}
-
-function toJsonObject(value: unknown): Record<string, Json> {
-  const json = toJson(value);
-  if (!json || typeof json !== "object" || Array.isArray(json))
-    throw new Error("Expected JSON object");
-
-  return json as Record<string, Json>;
+  return trimmed;
 }
 
 function isEpisodeChunksEmbeddingSelected(select?: string): boolean {
@@ -515,11 +478,16 @@ async function upsertCharacter(params: {
 
   if (!novelId) throw new Error("upsert_character: novel_id is required");
   if (!name) throw new Error("upsert_character: name is required");
-  const nextProfile = toJsonObject(params.args.profile);
+  const personality = toRequiredString(params.args.personality, "upsert_character: personality");
+  const gender = params.args.gender;
+  const birthday = toRequiredString(params.args.birthday, "upsert_character: birthday");
+
+  if (gender !== "male" && gender !== "female")
+    throw new Error(`upsert_character: invalid gender: ${gender}`);
 
   const { data: existing, error: existingError } = await params.supabase
     .from("characters")
-    .select("id,profile,name")
+    .select("id,name")
     .eq("novel_id", novelId)
     .eq("name", name)
     .limit(1);
@@ -534,7 +502,9 @@ async function upsertCharacter(params: {
       .insert({
         novel_id: novelId,
         name,
-        profile: nextProfile,
+        personality,
+        gender,
+        birthday,
       })
       .select("id,name")
       .single();
@@ -545,21 +515,9 @@ async function upsertCharacter(params: {
     return data;
   }
 
-  const currentProfile =
-    current.profile &&
-    typeof current.profile === "object" &&
-    !Array.isArray(current.profile)
-      ? (current.profile as Record<string, Json>)
-      : {};
-
-  const mergedProfile: Record<string, Json> = {
-    ...currentProfile,
-    ...nextProfile,
-  };
-
   const { data, error } = await params.supabase
     .from("characters")
-    .update({ profile: mergedProfile })
+    .update({ personality, gender, birthday })
     .eq("id", current.id)
     .select("id,name")
     .single();
@@ -577,13 +535,14 @@ async function upsertLocation(params: {
   const novelId = params.args.novel_id;
   const name = params.args.name.trim();
 
+  const situation = toRequiredString(params.args.situation, "upsert_location: situation");
+
   if (!novelId) throw new Error("upsert_location: novel_id is required");
   if (!name) throw new Error("upsert_location: name is required");
-  const nextProfile = toJsonObject(params.args.profile);
 
   const { data: existing, error: existingError } = await params.supabase
     .from("locations")
-    .select("id,profile,name")
+    .select("id,name")
     .eq("novel_id", novelId)
     .eq("name", name)
     .limit(1);
@@ -598,7 +557,7 @@ async function upsertLocation(params: {
       .insert({
         novel_id: novelId,
         name,
-        profile: nextProfile,
+        situation,
       })
       .select("id,name")
       .single();
@@ -609,21 +568,9 @@ async function upsertLocation(params: {
     return data;
   }
 
-  const currentProfile =
-    current.profile &&
-    typeof current.profile === "object" &&
-    !Array.isArray(current.profile)
-      ? (current.profile as Record<string, Json>)
-      : {};
-
-  const mergedProfile: Record<string, Json> = {
-    ...currentProfile,
-    ...nextProfile,
-  };
-
   const { data, error } = await params.supabase
     .from("locations")
-    .update({ profile: mergedProfile })
+    .update({ situation })
     .eq("id", current.id)
     .select("id,name")
     .single();
@@ -866,37 +813,45 @@ function createGeminiSupabaseCallableTool(params: {
     {
       name: "upsert_character",
       description:
-        "Create or update a character for this novel. Matches by (novel_id, name). Merges profile fields.",
+        "Create or update a character for this novel. Matches by (novel_id, name).",
       parameters: {
         type: Type.OBJECT,
         properties: {
           novel_id: { type: Type.STRING },
           name: { type: Type.STRING },
-          profile: {
-            type: Type.OBJECT,
-            description:
-              "JSON object with character attributes (e.g. role, goal, weakness, secrets, relationships).",
+          personality: {
+            type: Type.STRING,
+            description: "Character personality/traits summary.",
+          },
+          gender: {
+            type: Type.STRING,
+            description: "male|female",
+            enum: ["male", "female"],
+          },
+          birthday: {
+            type: Type.STRING,
+            description: "YYYY-MM-DD",
           },
         },
-        required: ["novel_id", "name", "profile"],
+        required: ["novel_id", "name", "personality", "gender", "birthday"],
       },
     },
     {
       name: "upsert_location",
       description:
-        "Create or update a location for this novel. Matches by (novel_id, name). Merges profile fields.",
+        "Create or update a location for this novel. Matches by (novel_id, name).",
       parameters: {
         type: Type.OBJECT,
         properties: {
           novel_id: { type: Type.STRING },
           name: { type: Type.STRING },
-          profile: {
-            type: Type.OBJECT,
+          situation: {
+            type: Type.STRING,
             description:
-              "JSON object with location attributes (e.g. vibe, hazards, resources, landmarks, rules).",
+              "Current situation/state of this place (e.g. political climate, dangers, events in progress).",
           },
         },
-        required: ["novel_id", "name", "profile"],
+        required: ["novel_id", "name", "situation"],
       },
     },
      {
@@ -1205,11 +1160,13 @@ function getErrorStatus(err: unknown): number | undefined {
   if (!err || typeof err !== "object") return undefined;
 
   const record = err as { status?: unknown };
+
   return typeof record.status === "number" ? record.status : undefined;
 }
 
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
+
   return typeof err === "string" ? err : "";
 }
 
@@ -1233,12 +1190,14 @@ function getGeminiRetryDelayMs(err: unknown): number | undefined {
   const retryInMatch = message.match(/retry in ([0-9.]+)s/i);
   if (retryInMatch) {
     const seconds = Number(retryInMatch[1]);
+
     return Number.isFinite(seconds) ? Math.ceil(seconds * 1000) : undefined;
   }
 
   const retryDelayMatch = message.match(/"retryDelay":"(\d+)s"/);
   if (retryDelayMatch) {
     const seconds = Number(retryDelayMatch[1]);
+
     return Number.isFinite(seconds) ? Math.ceil(seconds * 1000) : undefined;
   }
 
@@ -1283,17 +1242,17 @@ async function generateEpisodeWithTools(params: {
     "너의 목표는 다음 회차(약 1분 분량)를 한국어로 작성하는 것이다.",
     "필요한 정보는 반드시 tools를 통해 Supabase에서 읽어라. 추측 금지.",
     "최소한 다음은 tool로 확인해라:",
-    "- novels: title/genre/brief(기획서)",
+    "- novels: title/genre/story_bible(성경)",
     "- characters, locations: 있으면 설정으로 사용",
     "- plot_seeds(status=open): 있으면 떡밥으로 사용",
     "- episodes: 필요한 과거 회차 원문(일관성 유지 목적)",
-    "novels.brief가 비어있지 않으면 그 내용이 작품의 성경이다.",
-    "brief는 현재 다음 구조를 가진다(예시): cast(protagonist, key_characters[]), locations[], initial_plot_seeds[].",
-    "characters/locations/plot_seeds가 비어 있어도 novels.brief의 정보를 우선 사용해 세계관을 세팅해라.",
-    "캐릭터/장소/떡밥은 반드시 필요할 때만 생성/업데이트하라(등장/언급/서사적으로 의미가 생길 때). 가능한 한 먼저 novels.brief와 기존 DB 데이터를 재사용하라.",
+    "novels.story_bible가 비어있지 않으면 그 내용이 작품의 성경이다.",
+    "story_bible은 Markdown 텍스트다. 내용을 해석해 세계관/규칙/캐스트/플롯을 일관되게 유지해라.",
+    "characters/locations/plot_seeds가 비어 있어도 novels.story_bible의 정보를 우선 사용해 세계관을 세팅해라.",
+    "캐릭터/장소/떡밥은 반드시 필요할 때만 생성/업데이트하라(등장/언급/서사적으로 의미가 생길 때). 가능한 한 먼저 novels.story_bible와 기존 DB 데이터를 재사용하라.",
     "정말로 필요할 때만 아래 write tools를 사용해라(최소 호출): upsert_character, upsert_location, insert_plot_seed.",
     "insert_plot_seed를 호출할 때 관련 캐릭터/장소가 있으면 character_names/location_names를 함께 넘겨 조인 테이블을 연결해라.",
-    "novels.brief는 변경하지 마라. brief는 기획서(성경)로 고정이다.",
+    "novels.story_bible는 변경하지 마라. story_bible은 기획서(성경)로 고정이다.",
     "메타 표현 금지: 본문에 '1회차/2회차/1화/2화/지난 회차/이전 회차/전 회차/지난 화/이전 화/전편' 같은 회차 라벨을 절대 쓰지 마라.",
     "과거 사건은 '지난밤/아까/조금 전/그때'처럼 이야기 안에서 자연스럽게 이어서 써라.",
     "출력은 반드시 JSON만 허용한다(마크다운/코드펜스 금지).",

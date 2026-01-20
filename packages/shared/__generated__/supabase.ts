@@ -17,40 +17,52 @@ export type Database = {
       /** @table characters: 소설 내 등장인물 마스터 데이터 */
       characters: {
         Row: {
+          /** @column characters.birthday: 캐릭터 생일(필수): YYYY-MM-DD */
+          birthday: string
           /** @column characters.created_at: 생성 시각(기본값 now()) */
           created_at: string
+          /** @column characters.gender: 캐릭터 성별(필수): male|female */
+          gender: Database["public"]["Enums"]["gender"]
           /** @column characters.id: 캐릭터 ID (UUID, 기본값 gen_random_uuid()) */
           id: string
           /** @column characters.name: 캐릭터 이름 */
           name: string
           /** @column characters.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id: string
-          /** @column characters.profile: 캐릭터 프로필/속성(JSONB, 기본값 {}) - 확장 필드 */
-          profile: Json
+          /** @column characters.personality: 캐릭터 성격(필수) */
+          personality: string
         }
         Insert: {
+          /** @column characters.birthday: 캐릭터 생일(필수): YYYY-MM-DD */
+          birthday: string
           /** @column characters.created_at: 생성 시각(기본값 now()) */
           created_at?: string
+          /** @column characters.gender: 캐릭터 성별(필수): male|female */
+          gender: Database["public"]["Enums"]["gender"]
           /** @column characters.id: 캐릭터 ID (UUID, 기본값 gen_random_uuid()) */
           id?: string
           /** @column characters.name: 캐릭터 이름 */
           name: string
           /** @column characters.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id: string
-          /** @column characters.profile: 캐릭터 프로필/속성(JSONB, 기본값 {}) - 확장 필드 */
-          profile?: Json
+          /** @column characters.personality: 캐릭터 성격(필수) */
+          personality: string
         }
         Update: {
+          /** @column characters.birthday: 캐릭터 생일(필수): YYYY-MM-DD */
+          birthday?: string
           /** @column characters.created_at: 생성 시각(기본값 now()) */
           created_at?: string
+          /** @column characters.gender: 캐릭터 성별(필수): male|female */
+          gender?: Database["public"]["Enums"]["gender"]
           /** @column characters.id: 캐릭터 ID (UUID, 기본값 gen_random_uuid()) */
           id?: string
           /** @column characters.name: 캐릭터 이름 */
           name?: string
           /** @column characters.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id?: string
-          /** @column characters.profile: 캐릭터 프로필/속성(JSONB, 기본값 {}) - 확장 필드 */
-          profile?: Json
+          /** @column characters.personality: 캐릭터 성격(필수) */
+          personality?: string
         }
         Relationships: [
           {
@@ -212,8 +224,8 @@ export type Database = {
           name: string
           /** @column locations.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id: string
-          /** @column locations.profile: 장소 프로필/속성(JSONB, 기본값 {}) - 확장 필드 */
-          profile: Json
+          /** @column locations.situation: 장소의 현재 상황/상태(필수) */
+          situation: string
         }
         Insert: {
           /** @column locations.created_at: 생성 시각(기본값 now()) */
@@ -224,8 +236,8 @@ export type Database = {
           name: string
           /** @column locations.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id: string
-          /** @column locations.profile: 장소 프로필/속성(JSONB, 기본값 {}) - 확장 필드 */
-          profile?: Json
+          /** @column locations.situation: 장소의 현재 상황/상태(필수) */
+          situation: string
         }
         Update: {
           /** @column locations.created_at: 생성 시각(기본값 now()) */
@@ -236,8 +248,8 @@ export type Database = {
           name?: string
           /** @column locations.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id?: string
-          /** @column locations.profile: 장소 프로필/속성(JSONB, 기본값 {}) - 확장 필드 */
-          profile?: Json
+          /** @column locations.situation: 장소의 현재 상황/상태(필수) */
+          situation?: string
         }
         Relationships: [
           {
@@ -252,8 +264,6 @@ export type Database = {
       /** @table novels: 소설(시리즈) 메타데이터 루트 엔티티 */
       novels: {
         Row: {
-          /** @column novels.brief: 소설 기획서/성경(JSONB). 예: {logline, premise, tone, pov, style_guide, characters[], locations[], plot_seeds[]} */
-          brief: Json
           /** @column novels.created_at: 생성 시각(기본값 now()) */
           created_at: string
           /** @column novels.genre: 장르(자유 텍스트) */
@@ -262,12 +272,12 @@ export type Database = {
           id: string
           /** @column novels.status: 소설 상태(기본값 'active') */
           status: string
+          /** @column novels.story_bible: 소설 성경/스토리 바이블(Markdown 텍스트) */
+          story_bible: string
           /** @column novels.title: 소설 제목 */
           title: string
         }
         Insert: {
-          /** @column novels.brief: 소설 기획서/성경(JSONB). 예: {logline, premise, tone, pov, style_guide, characters[], locations[], plot_seeds[]} */
-          brief?: Json
           /** @column novels.created_at: 생성 시각(기본값 now()) */
           created_at?: string
           /** @column novels.genre: 장르(자유 텍스트) */
@@ -276,12 +286,12 @@ export type Database = {
           id?: string
           /** @column novels.status: 소설 상태(기본값 'active') */
           status?: string
+          /** @column novels.story_bible: 소설 성경/스토리 바이블(Markdown 텍스트) */
+          story_bible?: string
           /** @column novels.title: 소설 제목 */
           title: string
         }
         Update: {
-          /** @column novels.brief: 소설 기획서/성경(JSONB). 예: {logline, premise, tone, pov, style_guide, characters[], locations[], plot_seeds[]} */
-          brief?: Json
           /** @column novels.created_at: 생성 시각(기본값 now()) */
           created_at?: string
           /** @column novels.genre: 장르(자유 텍스트) */
@@ -290,6 +300,8 @@ export type Database = {
           id?: string
           /** @column novels.status: 소설 상태(기본값 'active') */
           status?: string
+          /** @column novels.story_bible: 소설 성경/스토리 바이블(Markdown 텍스트) */
+          story_bible?: string
           /** @column novels.title: 소설 제목 */
           title?: string
         }
@@ -507,7 +519,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      gender: "male" | "female"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -634,6 +646,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      gender: ["male", "female"],
+    },
   },
 } as const
