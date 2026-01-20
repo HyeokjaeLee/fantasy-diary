@@ -71,6 +71,7 @@ type InsertPlotSeedArgs = {
 
 type GenerateResult = {
   episode_content: string;
+  story_time: string;
   resolved_plot_seed_ids?: string[];
 };
 
@@ -231,6 +232,15 @@ function assertGenerateResult(value: unknown): GenerateResult {
   if (!episodeContent)
     throw new Error("Invalid model result: episode_content is required");
 
+  const storyTime =
+    typeof record.story_time === "string" ? record.story_time.trim() : "";
+
+  if (!storyTime) throw new Error("Invalid model result: story_time is required");
+
+  const ms = Date.parse(storyTime);
+  if (!Number.isFinite(ms))
+    throw new Error("Invalid model result: story_time must be an ISO timestamp");
+
   let resolvedPlotSeedIds: string[] | undefined;
   if (record.resolved_plot_seed_ids !== undefined) {
     if (!Array.isArray(record.resolved_plot_seed_ids)) {
@@ -252,7 +262,11 @@ function assertGenerateResult(value: unknown): GenerateResult {
     if (resolvedPlotSeedIds.length === 0) resolvedPlotSeedIds = undefined;
   }
 
-  return { episode_content: episodeContent, resolved_plot_seed_ids: resolvedPlotSeedIds };
+  return {
+    episode_content: episodeContent,
+    story_time: new Date(ms).toISOString(),
+    resolved_plot_seed_ids: resolvedPlotSeedIds,
+  };
 }
 
 function vectorLiteral(values: number[]): string {
@@ -1047,6 +1061,7 @@ async function insertEpisode(params: {
   supabase: ReturnType<typeof createSupabaseAdminClient>;
   novelId: string;
   episodeNo: number;
+  storyTime: string;
   episodeContent: string;
 }): Promise<{ id: string; episode_no: number }> {
   const { data, error } = await params.supabase
@@ -1054,6 +1069,7 @@ async function insertEpisode(params: {
     .insert({
       novel_id: params.novelId,
       episode_no: params.episodeNo,
+      story_time: params.storyTime,
       content: params.episodeContent,
     })
     .select("id,episode_no")
@@ -1256,8 +1272,7 @@ async function generateEpisodeWithTools(params: {
     "메타 표현 금지: 본문에 '1회차/2회차/1화/2화/지난 회차/이전 회차/전 회차/지난 화/이전 화/전편' 같은 회차 라벨을 절대 쓰지 마라.",
     "과거 사건은 '지난밤/아까/조금 전/그때'처럼 이야기 안에서 자연스럽게 이어서 써라.",
     "출력은 반드시 JSON만 허용한다(마크다운/코드펜스 금지).",
-    "반드시 아래 스키마를 지켜라:",
-    '{\n  "episode_content": string,\n  "resolved_plot_seed_ids"?: string[]\n}',
+    "story_time은 이 회차의 '스토리 진행 시간'이다(ISO 8601 timestamp). 시간 순서를 유지해라.",
   ].join("\n");
 
   const chat = params.ai.chats.create({
@@ -1412,6 +1427,7 @@ async function main(): Promise<void> {
       supabase,
       novelId: targetNovelId,
       episodeNo,
+      storyTime: generated.story_time,
       episodeContent: generated.episode_content,
     });
 

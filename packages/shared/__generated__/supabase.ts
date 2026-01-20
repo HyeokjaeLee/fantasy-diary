@@ -178,6 +178,8 @@ export type Database = {
           id: string
           /** @column episodes.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id: string
+          /** @column episodes.story_time: 회차 내 사건 진행 시간(스토리 타임라인, timestamptz) */
+          story_time: string
         }
         Insert: {
           /** @column episodes.content: 에피소드 내용(원문 텍스트) */
@@ -190,6 +192,8 @@ export type Database = {
           id?: string
           /** @column episodes.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id: string
+          /** @column episodes.story_time: 회차 내 사건 진행 시간(스토리 타임라인, timestamptz) */
+          story_time: string
         }
         Update: {
           /** @column episodes.content: 에피소드 내용(원문 텍스트) */
@@ -202,6 +206,8 @@ export type Database = {
           id?: string
           /** @column episodes.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id?: string
+          /** @column episodes.story_time: 회차 내 사건 진행 시간(스토리 타임라인, timestamptz) */
+          story_time?: string
         }
         Relationships: [
           {
