@@ -21,7 +21,8 @@
   },
   "dependencies": {
     "@fantasy-diary/shared": "workspace:*",
-    "@google/genai": "^1.37.0"
+    "@google/genai": "^1.37.0",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@fantasy-diary/configs": "workspace:*",

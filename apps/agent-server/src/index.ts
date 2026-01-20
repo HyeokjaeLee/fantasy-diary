@@ -8,6 +8,7 @@ import {
   Type,
 } from "@google/genai";
 import { assert } from "es-toolkit";
+import { z } from "zod";
 
 type ArgMap = Record<string, string | boolean>;
 
@@ -221,51 +222,47 @@ function extractFirstJsonObject(text: string): unknown {
   return JSON.parse(candidate);
 }
 
-function assertGenerateResult(value: unknown): GenerateResult {
-  if (!value || typeof value !== "object")
-    throw new Error("Invalid model result (not an object)");
+const GenerateResultSchema = z
+  .object({
+    episode_content: z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => value.length > 0, {
+        message: "episode_content is required",
+      }),
+    story_time: z
+      .string()
+      .transform((value) => value.trim())
+      .refine((value) => value.length > 0, {
+        message: "story_time is required",
+      })
+      .refine((value) => Number.isFinite(Date.parse(value)), {
+        message: "story_time must be an ISO timestamp",
+      })
+      .transform((value) => new Date(Date.parse(value)).toISOString()),
+    resolved_plot_seed_ids: z
+      .array(
+        z
+          .string()
+          .transform((value) => value.trim())
+          .refine((value) => value.length > 0, { message: "plot seed id must be non-empty" })
+      )
+      .optional(),
+  })
+  .strict();
 
-  const record = value as Record<string, unknown>;
-  const episodeContent =
-    typeof record.episode_content === "string" ? record.episode_content.trim() : "";
+function parseGenerateResult(value: unknown): GenerateResult {
+  const parsed = GenerateResultSchema.parse(value);
 
-  if (!episodeContent)
-    throw new Error("Invalid model result: episode_content is required");
-
-  const storyTime =
-    typeof record.story_time === "string" ? record.story_time.trim() : "";
-
-  if (!storyTime) throw new Error("Invalid model result: story_time is required");
-
-  const ms = Date.parse(storyTime);
-  if (!Number.isFinite(ms))
-    throw new Error("Invalid model result: story_time must be an ISO timestamp");
-
-  let resolvedPlotSeedIds: string[] | undefined;
-  if (record.resolved_plot_seed_ids !== undefined) {
-    if (!Array.isArray(record.resolved_plot_seed_ids)) {
-      throw new Error(
-        "Invalid model result: resolved_plot_seed_ids must be an array"
-      );
-    }
-
-    resolvedPlotSeedIds = [];
-    for (const id of record.resolved_plot_seed_ids) {
-      if (typeof id !== "string")
-        throw new Error(
-          "Invalid model result: resolved_plot_seed_ids must be string[]"
-        );
-      const trimmed = id.trim();
-      if (trimmed) resolvedPlotSeedIds.push(trimmed);
-    }
-
-    if (resolvedPlotSeedIds.length === 0) resolvedPlotSeedIds = undefined;
-  }
+  const resolvedPlotSeedIds = parsed.resolved_plot_seed_ids
+    ? Array.from(new Set(parsed.resolved_plot_seed_ids))
+    : undefined;
 
   return {
-    episode_content: episodeContent,
-    story_time: new Date(ms).toISOString(),
-    resolved_plot_seed_ids: resolvedPlotSeedIds,
+    episode_content: parsed.episode_content,
+    story_time: parsed.story_time,
+    resolved_plot_seed_ids:
+      resolvedPlotSeedIds && resolvedPlotSeedIds.length > 0 ? resolvedPlotSeedIds : undefined,
   };
 }
 
@@ -1318,8 +1315,55 @@ async function generateEpisodeWithTools(params: {
     if (typeof text !== "string" || text.trim().length === 0)
       throw new Error("Gemini returned empty text");
 
-    const json = extractFirstJsonObject(text);
-    const generated = assertGenerateResult(json);
+    let generated: GenerateResult;
+
+    try {
+      const json = extractFirstJsonObject(text);
+      generated = parseGenerateResult(json);
+    } catch (err) {
+      const zodIssues =
+        err instanceof z.ZodError
+          ? err.issues
+              .map((issue) => {
+                const path = issue.path.length > 0 ? issue.path.join(".") : "(root)";
+
+                return `- ${path}: ${issue.message}`;
+              })
+              .join("\n")
+          : undefined;
+
+      const repairPrompt = [
+        "직전 출력(JSON)이 스키마 검증에 실패했다.",
+        "아래 에러를 참고해서, 반드시 스키마에 맞는 JSON만 다시 출력해라.",
+        "- 코드펜스/마크다운/설명 금지. JSON 객체 1개만 출력.",
+        "- story_time은 KST(+09:00) 오프셋이 포함된 ISO 8601 timestamp로 써라.",
+        "",
+        "스키마:",
+        '{\n  "episode_content": string,\n  "story_time": string,\n  "resolved_plot_seed_ids"?: string[]\n}',
+        "",
+        zodIssues ? `Zod 에러:\n${zodIssues}` : `에러: ${String(err)}`,
+      ].join("\n");
+
+      const repaired = await sendGeminiWithRetry({
+        maxAttempts: 3,
+        send: async () => {
+          const next = await chat.sendMessage({ message: repairPrompt });
+
+          const repairedText = next.text;
+          if (typeof repairedText !== "string" || repairedText.trim().length === 0)
+            throw new Error("Gemini returned empty text");
+
+          return next;
+        },
+      });
+
+      const repairedText = repaired.text;
+      if (typeof repairedText !== "string" || repairedText.trim().length === 0)
+        throw new Error("Gemini returned empty text");
+
+      const repairedJson = extractFirstJsonObject(repairedText);
+      generated = parseGenerateResult(repairedJson);
+    }
 
     if (!containsEpisodeMeta(generated.episode_content)) return generated;
 
