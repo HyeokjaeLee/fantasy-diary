@@ -1,5 +1,5 @@
 import type { GoogleGenAI } from "@google/genai";
-import { FunctionCallingConfigMode } from "@google/genai";
+import { FunctionCallingConfigMode, Type } from "@google/genai";
 import { z } from "zod";
 
 import { AgentError } from "../errors/agentError";
@@ -60,18 +60,70 @@ function parseGenerateResult(value: unknown): GenerateResult {
 }
 
 function extractFirstJsonObject(text: string): unknown {
-  const first = text.indexOf("{");
-  const last = text.lastIndexOf("}");
-  if (first === -1 || last === -1 || last <= first)
+  const start = text.indexOf("{");
+  if (start === -1)
     throw new AgentError({
       type: "PARSE_ERROR",
       code: "INVALID_JSON",
       message: "Model did not return JSON",
-      details: { op: "extract_json" },
+      details: { op: "extract_json", reason: "no_open_brace" },
     });
-  const candidate = text.slice(first, last + 1).trim();
 
-  return JSON.parse(candidate);
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+
+      if (ch === "\\") {
+        escaped = true;
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = false;
+      }
+
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{") depth++;
+    if (ch === "}") depth--;
+
+    if (depth === 0) {
+      const candidate = text.slice(start, i + 1).trim();
+
+      try {
+        return JSON.parse(candidate);
+      } catch (err) {
+        throw AgentError.fromUnknown(err, {
+          type: "PARSE_ERROR",
+          code: "INVALID_JSON",
+          messagePrefix: "JSON.parse",
+          details: { op: "extract_json", reason: "parse_failed" },
+        });
+      }
+    }
+  }
+
+  throw new AgentError({
+    type: "PARSE_ERROR",
+    code: "INVALID_JSON",
+    message: "Model returned incomplete JSON",
+    details: { op: "extract_json", reason: "unclosed_brace" },
+  });
 }
 
 function renderTemplate(template: string, variables: Record<string, string>): string {
@@ -251,6 +303,13 @@ export async function generateEpisodeWithTools(params: {
   novelId: string;
   episodeNo: number;
   maxEpisodeNo: number;
+  previousEpisode?:
+    | {
+        episode_no: number;
+        story_time: string | null;
+        content_tail: string;
+      }
+    | null;
 }): Promise<GenerateResult> {
   const systemInstruction = systemPrompt.trim();
 
@@ -267,10 +326,15 @@ export async function generateEpisodeWithTools(params: {
     },
   });
 
+  const previousEpisode = params.previousEpisode ?? null;
+
   const message = renderTemplate(userPromptTemplate, {
     novelId: params.novelId,
     episodeNo: String(params.episodeNo),
     maxEpisodeNo: String(params.maxEpisodeNo),
+    previousEpisodeNo: previousEpisode ? String(previousEpisode.episode_no) : "",
+    previousEpisodeStoryTime: previousEpisode?.story_time ?? "",
+    previousEpisodeContentTail: previousEpisode?.content_tail ?? "",
   }).trim();
   const retryMessage = retryPrompt.trim();
 
@@ -355,8 +419,76 @@ export async function generateEpisodeWithTools(params: {
           details: { op: "chat.sendMessage" },
         });
 
-      const repairedJson = extractFirstJsonObject(repairedText);
-      generated = parseGenerateResult(repairedJson);
+      try {
+        const repairedJson = extractFirstJsonObject(repairedText);
+        generated = parseGenerateResult(repairedJson);
+      } catch (repairErr) {
+        const jsonOnlyRepairPrompt = renderTemplate(repairPromptTemplate, {
+          issues:
+            "반드시 JSON만 출력하세요. 마크다운/설명/텍스트 금지.\n\n" +
+            `에러: ${String(repairErr)}`,
+        }).trim();
+
+        const jsonOnly = await sendGeminiWithRetry({
+          maxAttempts: 2,
+          send: async () => {
+            const next = await chat.sendMessage({
+              message: jsonOnlyRepairPrompt,
+              config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    episode_content: { type: Type.STRING },
+                    story_time: { type: Type.STRING },
+                    resolved_plot_seed_ids: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                  },
+                  required: ["episode_content", "story_time"],
+                  propertyOrdering: [
+                    "episode_content",
+                    "story_time",
+                    "resolved_plot_seed_ids",
+                  ],
+                },
+                tools: [],
+                toolConfig: {
+                  functionCallingConfig: {
+                    mode: FunctionCallingConfigMode.NONE,
+                  },
+                },
+              },
+            });
+
+            const jsonOnlyText = next.text;
+            if (typeof jsonOnlyText !== "string" || jsonOnlyText.trim().length === 0)
+              throw new AgentError({
+                type: "UPSTREAM_API_ERROR",
+                code: "UNAVAILABLE",
+                message: "Gemini returned empty text",
+                retryable: true,
+                details: { op: "chat.sendMessage", kind: "json_only_repair" },
+              });
+
+            return next;
+          },
+        });
+
+        const jsonOnlyText = jsonOnly.text;
+        if (typeof jsonOnlyText !== "string" || jsonOnlyText.trim().length === 0)
+          throw new AgentError({
+            type: "UPSTREAM_API_ERROR",
+            code: "UNAVAILABLE",
+            message: "Gemini returned empty text",
+            retryable: true,
+            details: { op: "chat.sendMessage", kind: "json_only_repair" },
+          });
+
+        const jsonOnlyParsed = extractFirstJsonObject(jsonOnlyText);
+        generated = parseGenerateResult(jsonOnlyParsed);
+      }
     }
 
     if (!containsEpisodeMeta(generated.episode_content)) return generated;

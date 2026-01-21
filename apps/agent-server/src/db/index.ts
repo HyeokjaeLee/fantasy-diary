@@ -808,6 +808,53 @@ export async function insertPlotSeed(params: {
   return data;
 }
 
+export async function getPreviousEpisodeForPrompt(params: {
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+  novelId: string;
+  episodeNo: number;
+  maxChars?: number;
+}): Promise<
+  | {
+      episode_no: number;
+      story_time: string | null;
+      content_tail: string;
+    }
+  | null
+> {
+  const maxChars =
+    typeof params.maxChars === "number" && Number.isFinite(params.maxChars)
+      ? Math.max(200, Math.min(10_000, Math.floor(params.maxChars)))
+      : 2500;
+
+  const { data, error } = await params.supabase
+    .from("episodes")
+    .select("episode_no,story_time,content")
+    .eq("novel_id", params.novelId)
+    .eq("episode_no", params.episodeNo)
+    .limit(1);
+
+  if (error)
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "QUERY_FAILED",
+      message: `getPreviousEpisodeForPrompt: ${error.message}`,
+      details: { table: "episodes", op: "select_by_episode_no" },
+      retryable: true,
+    });
+
+  const row = data?.[0];
+  const content = typeof row?.content === "string" ? row.content.trim() : "";
+  if (!row || !content) return null;
+
+  const tail = content.length > maxChars ? content.slice(-maxChars) : content;
+
+  return {
+    episode_no: row.episode_no,
+    story_time: typeof row.story_time === "string" ? row.story_time : null,
+    content_tail: tail,
+  };
+}
+
 export async function getNextEpisodeNo(params: {
   supabase: ReturnType<typeof createSupabaseAdminClient>;
   novelId: string;

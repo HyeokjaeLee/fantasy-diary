@@ -4,6 +4,7 @@ import { assert } from "es-toolkit";
 
 import {
   getNextEpisodeNo,
+  getPreviousEpisodeForPrompt,
   indexEpisodeSummary,
   insertEpisode,
   markPlotSeedsIntroduced,
@@ -77,6 +78,16 @@ async function main(): Promise<void> {
     const episodeNo = await getNextEpisodeNo({ supabase, novelId: targetNovelId });
     const maxEpisodeNo = episodeNo - 1;
 
+    const previousEpisode =
+      maxEpisodeNo >= 1
+        ? await getPreviousEpisodeForPrompt({
+            supabase,
+            novelId: targetNovelId,
+            episodeNo: maxEpisodeNo,
+            maxChars: 2500,
+          })
+        : null;
+
     const tool = createGeminiSupabaseCallableTool({
       supabase,
       geminiApiKey,
@@ -100,6 +111,7 @@ async function main(): Promise<void> {
       novelId: targetNovelId,
       episodeNo,
       maxEpisodeNo,
+      previousEpisode,
     });
     logger.info("episode.generate.done", {
       ms: Date.now() - t0,
