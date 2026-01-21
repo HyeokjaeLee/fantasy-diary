@@ -19,6 +19,7 @@ import {
   upsertCharacter,
   upsertLocation,
 } from "../db/index";
+import { AgentError } from "../errors/agentError";
 import type { Logger } from "../lib/logger";
 
 type GeminiSupabaseTool = {
@@ -38,8 +39,8 @@ export function createGeminiSupabaseCallableTool(params: {
   const declarations: FunctionDeclaration[] = [
     {
       name: "db_select",
-      description:
-        "Read-only select from Supabase. Use this to load novel state (novels/characters/locations/plot_seeds/episodes).",
+        description:
+          "Read-only select from Supabase. Use this to load novel state (novels/characters/locations/plot_seeds/episodes). Note: novels has 'title' column (not 'name').",
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -208,126 +209,215 @@ export function createGeminiSupabaseCallableTool(params: {
         tools: calls.map((c) => ({ name: c.name, args: c.args })),
       });
 
+      const toToolAgentError = (toolName: string, err: unknown): AgentError => {
+        return AgentError.fromUnknown(err, {
+          type: "CALLING_TOOL_ERROR",
+          code: "TOOL_EXECUTION_FAILED",
+          messagePrefix: toolName,
+          details: { tool: toolName },
+        });
+      };
+
+      const pushToolAgentError = (toolName: string, err: unknown): AgentError => {
+        const agentError = toToolAgentError(toolName, err);
+
+        parts.push({
+          functionResponse: {
+            name: toolName,
+            response: agentError.toLLMResponse(),
+          },
+        });
+
+        return agentError;
+      };
+
+      const pushUnknownToolError = (toolName: string) => {
+        const agentError = new AgentError({
+          type: "CALLING_TOOL_ERROR",
+          code: "UNKNOWN_TOOL",
+          message: `Unknown tool: ${toolName}`,
+          details: { tool: toolName },
+        });
+
+        parts.push({
+          functionResponse: {
+            name: toolName,
+            response: agentError.toLLMResponse(),
+          },
+        });
+      };
+
       for (const call of calls) {
         const name = call.name;
         if (!name) continue;
 
         if (name === "db_select") {
           const startedAt = Date.now();
-          const result = await dbSelect(
-            params.supabase,
-            call.args as unknown as DbSelectArgs
-          );
 
-          const ms = Date.now() - startedAt;
+          try {
+            const result = await dbSelect(
+              params.supabase,
+              call.args as unknown as DbSelectArgs
+            );
 
-          const count = Array.isArray(result) ? result.length : undefined;
-          params.logger.info("tool.db_select", { ms, rows: count });
+            const ms = Date.now() - startedAt;
+            const count = Array.isArray(result) ? result.length : undefined;
+            params.logger.info("tool.db_select", { ms, rows: count });
 
-          parts.push({
-            functionResponse: {
-              name,
-              response: { data: result },
-            },
-          });
+            parts.push({
+              functionResponse: {
+                name,
+                response: { data: result },
+              },
+            });
+          } catch (err) {
+            const ms = Date.now() - startedAt;
+            const agentError = pushToolAgentError(name, err);
+
+            params.logger.warn("tool.db_select.error", {
+              ms,
+              error: agentError.toLLMResponse(),
+              args: call.args,
+            });
+          }
 
           continue;
         }
 
         if (name === "rag_search_summaries") {
-          const result = await ragSearchSummaries({
-            supabase: params.supabase,
-            geminiApiKey: params.geminiApiKey,
-            geminiEmbeddingModel: params.geminiEmbeddingModel,
-            ragEmbeddingModelId: params.ragEmbeddingModelId,
-            args: call.args as unknown as RagSearchSummariesArgs,
-          });
+          try {
+            const result = await ragSearchSummaries({
+              supabase: params.supabase,
+              geminiApiKey: params.geminiApiKey,
+              geminiEmbeddingModel: params.geminiEmbeddingModel,
+              ragEmbeddingModelId: params.ragEmbeddingModelId,
+              args: call.args as unknown as RagSearchSummariesArgs,
+            });
 
-          parts.push({
-            functionResponse: {
-              name,
-              response: { data: result },
-            },
-          });
+            parts.push({
+              functionResponse: {
+                name,
+                response: { data: result },
+              },
+            });
+          } catch (err) {
+            const agentError = pushToolAgentError(name, err);
+
+            params.logger.warn("tool.rag_search_summaries.error", {
+              error: agentError.toLLMResponse(),
+              args: call.args,
+            });
+          }
 
           continue;
         }
 
         if (name === "rag_search_chunks") {
-          const result = await ragSearchChunks({
-            supabase: params.supabase,
-            geminiApiKey: params.geminiApiKey,
-            geminiEmbeddingModel: params.geminiEmbeddingModel,
-            ragEmbeddingModelId: params.ragEmbeddingModelId,
-            args: call.args as unknown as RagSearchChunksArgs,
-          });
+          try {
+            const result = await ragSearchChunks({
+              supabase: params.supabase,
+              geminiApiKey: params.geminiApiKey,
+              geminiEmbeddingModel: params.geminiEmbeddingModel,
+              ragEmbeddingModelId: params.ragEmbeddingModelId,
+              args: call.args as unknown as RagSearchChunksArgs,
+            });
 
-          parts.push({
-            functionResponse: {
-              name,
-              response: { data: result },
-            },
-          });
+            parts.push({
+              functionResponse: {
+                name,
+                response: { data: result },
+              },
+            });
+          } catch (err) {
+            const agentError = pushToolAgentError(name, err);
+
+            params.logger.warn("tool.rag_search_chunks.error", {
+              error: agentError.toLLMResponse(),
+              args: call.args,
+            });
+          }
 
           continue;
         }
 
         if (name === "upsert_character") {
-          const result = await upsertCharacter({
-            supabase: params.supabase,
-            args: call.args as unknown as UpsertCharacterArgs,
-          });
+          try {
+            const result = await upsertCharacter({
+              supabase: params.supabase,
+              args: call.args as unknown as UpsertCharacterArgs,
+            });
 
-          parts.push({
-            functionResponse: {
-              name,
-              response: { data: result },
-            },
-          });
+            parts.push({
+              functionResponse: {
+                name,
+                response: { data: result },
+              },
+            });
+          } catch (err) {
+            const agentError = pushToolAgentError(name, err);
+
+            params.logger.warn("tool.upsert_character.error", {
+              error: agentError.toLLMResponse(),
+              args: call.args,
+            });
+          }
 
           continue;
         }
 
         if (name === "upsert_location") {
-          const result = await upsertLocation({
-            supabase: params.supabase,
-            args: call.args as unknown as UpsertLocationArgs,
-          });
+          try {
+            const result = await upsertLocation({
+              supabase: params.supabase,
+              args: call.args as unknown as UpsertLocationArgs,
+            });
 
-          parts.push({
-            functionResponse: {
-              name,
-              response: { data: result },
-            },
-          });
+            parts.push({
+              functionResponse: {
+                name,
+                response: { data: result },
+              },
+            });
+          } catch (err) {
+            const agentError = pushToolAgentError(name, err);
+
+            params.logger.warn("tool.upsert_location.error", {
+              error: agentError.toLLMResponse(),
+              args: call.args,
+            });
+          }
 
           continue;
         }
 
         if (name === "insert_plot_seed") {
-          const result = await insertPlotSeed({
-            supabase: params.supabase,
-            args: call.args as unknown as InsertPlotSeedArgs,
-          });
+          try {
+            const result = await insertPlotSeed({
+              supabase: params.supabase,
+              args: call.args as unknown as InsertPlotSeedArgs,
+            });
 
-          createdPlotSeedIds.push(result.id);
+            createdPlotSeedIds.push(result.id);
 
-          parts.push({
-            functionResponse: {
-              name,
-              response: { data: result },
-            },
-          });
+            parts.push({
+              functionResponse: {
+                name,
+                response: { data: result },
+              },
+            });
+          } catch (err) {
+            const agentError = pushToolAgentError(name, err);
+
+            params.logger.warn("tool.insert_plot_seed.error", {
+              error: agentError.toLLMResponse(),
+              args: call.args,
+            });
+          }
 
           continue;
         }
 
-        parts.push({
-          functionResponse: {
-            name,
-            response: { error: `Unknown tool: ${name}` },
-          },
-        });
+        pushUnknownToolError(name);
       }
 
       return parts;

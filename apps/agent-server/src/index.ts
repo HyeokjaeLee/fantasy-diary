@@ -9,6 +9,7 @@ import {
   markPlotSeedsIntroduced,
   resolvePlotSeeds,
 } from "./db/index";
+import { AgentError } from "./errors/agentError";
 import { generateEpisodeWithTools } from "./gemini";
 import { parseArgs, toBoolean } from "./lib/args";
 import { createLogger } from "./lib/logger";
@@ -49,11 +50,23 @@ async function main(): Promise<void> {
       .eq("status", "active")
       .limit(50);
 
-    if (error) throw new Error(`load novels: ${error.message}`);
+    if (error)
+      throw new AgentError({
+        type: "DATABASE_ERROR",
+        code: "QUERY_FAILED",
+        message: `load novels: ${error.message}`,
+        details: { table: "novels", op: "select_active" },
+        retryable: true,
+      });
 
     for (const n of data ?? []) targetNovelIds.push(n.id);
   } else {
-    throw new Error(`Unknown --kind: ${kind}`);
+    throw new AgentError({
+      type: "VALIDATION_ERROR",
+      code: "INVALID_ARGUMENT",
+      message: `Unknown --kind: ${kind}`,
+      details: { arg: "kind", value: kind },
+    });
   }
 
   const results: Array<{ novel_id: string; episode_no: number; episode_id?: string }> = [];

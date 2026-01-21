@@ -2,6 +2,7 @@ import type { GoogleGenAI } from "@google/genai";
 import { FunctionCallingConfigMode } from "@google/genai";
 import { z } from "zod";
 
+import { AgentError } from "../errors/agentError";
 import type { GeminiSupabaseTool } from "../tools";
 import repairPromptTemplate from "./prompts/repair.md";
 import retryPrompt from "./prompts/retry.md";
@@ -62,7 +63,12 @@ function extractFirstJsonObject(text: string): unknown {
   const first = text.indexOf("{");
   const last = text.lastIndexOf("}");
   if (first === -1 || last === -1 || last <= first)
-    throw new Error("Model did not return JSON");
+    throw new AgentError({
+      type: "PARSE_ERROR",
+      code: "INVALID_JSON",
+      message: "Model did not return JSON",
+      details: { op: "extract_json" },
+    });
   const candidate = text.slice(first, last + 1).trim();
 
   return JSON.parse(candidate);
@@ -109,19 +115,36 @@ export async function geminiEmbedText(params: {
   if (!res.ok) {
     const message = (json as { error?: { message?: string } } | null)?.error
       ?.message;
-    throw new Error(
-      `Gemini embed API error: ${res.status} ${message ?? res.statusText}`
-    );
+
+    throw new AgentError({
+      type: "UPSTREAM_API_ERROR",
+      code: res.status === 429 ? "RATE_LIMITED" : "UNAVAILABLE",
+      message: `Gemini embed API error: ${res.status} ${message ?? res.statusText}`,
+      retryable: res.status === 429 || res.status >= 500,
+      details: { status: res.status },
+    });
   }
 
   const values = json?.embedding?.values;
   if (!Array.isArray(values) || values.length === 0)
-    throw new Error("Gemini embed API returned empty embedding");
+    throw new AgentError({
+      type: "UPSTREAM_API_ERROR",
+      code: "GEMINI_EMBED_FAILED",
+      message: "Gemini embed API returned empty embedding",
+      retryable: true,
+      details: { reason: "empty_embedding" },
+    });
 
   const numbers: number[] = [];
   for (const v of values) {
     if (typeof v !== "number")
-      throw new Error("Gemini embed API returned non-numeric embedding");
+      throw new AgentError({
+        type: "UPSTREAM_API_ERROR",
+        code: "GEMINI_EMBED_FAILED",
+        message: "Gemini embed API returned non-numeric embedding",
+        retryable: true,
+        details: { reason: "non_numeric_embedding" },
+      });
     numbers.push(v);
   }
 
@@ -214,7 +237,11 @@ async function sendGeminiWithRetry<T>(params: {
     }
   }
 
-  throw new Error("Unreachable");
+  throw new AgentError({
+    type: "UNEXPECTED_ERROR",
+    code: "UNKNOWN",
+    message: "Unreachable",
+  });
 }
 
 export async function generateEpisodeWithTools(params: {
@@ -257,14 +284,26 @@ export async function generateEpisodeWithTools(params: {
 
         const text = next.text;
         if (typeof text !== "string" || text.trim().length === 0)
-          throw new Error("Gemini returned empty text");
+          throw new AgentError({
+            type: "UPSTREAM_API_ERROR",
+            code: "UNAVAILABLE",
+            message: "Gemini returned empty text",
+            retryable: true,
+            details: { op: "chat.sendMessage" },
+          });
 
         return next;
       },
     });
     const text = response.text;
     if (typeof text !== "string" || text.trim().length === 0)
-      throw new Error("Gemini returned empty text");
+      throw new AgentError({
+        type: "UPSTREAM_API_ERROR",
+        code: "UNAVAILABLE",
+        message: "Gemini returned empty text",
+        retryable: true,
+        details: { op: "chat.sendMessage" },
+      });
 
     let generated: GenerateResult;
 
@@ -294,7 +333,13 @@ export async function generateEpisodeWithTools(params: {
 
           const repairedText = next.text;
           if (typeof repairedText !== "string" || repairedText.trim().length === 0)
-            throw new Error("Gemini returned empty text");
+            throw new AgentError({
+              type: "UPSTREAM_API_ERROR",
+              code: "UNAVAILABLE",
+              message: "Gemini returned empty text",
+              retryable: true,
+              details: { op: "chat.sendMessage" },
+            });
 
           return next;
         },
@@ -302,7 +347,13 @@ export async function generateEpisodeWithTools(params: {
 
       const repairedText = repaired.text;
       if (typeof repairedText !== "string" || repairedText.trim().length === 0)
-        throw new Error("Gemini returned empty text");
+        throw new AgentError({
+          type: "UPSTREAM_API_ERROR",
+          code: "UNAVAILABLE",
+          message: "Gemini returned empty text",
+          retryable: true,
+          details: { op: "chat.sendMessage" },
+        });
 
       const repairedJson = extractFirstJsonObject(repairedText);
       generated = parseGenerateResult(repairedJson);
@@ -310,10 +361,21 @@ export async function generateEpisodeWithTools(params: {
 
     if (!containsEpisodeMeta(generated.episode_content)) return generated;
 
-    if (attempt === 2) throw new Error("Generated episode contains episode-label meta references");
+    if (attempt === 2)
+      throw new AgentError({
+        type: "VALIDATION_ERROR",
+        code: "INVALID_ARGUMENT",
+        message: "Generated episode contains episode-label meta references",
+        hint: "Rewrite to avoid referencing previous episode numbers or '지난 화'.",
+        details: { rule: "no_episode_meta" },
+      });
   }
 
-  throw new Error("Unreachable");
+  throw new AgentError({
+    type: "UNEXPECTED_ERROR",
+    code: "UNKNOWN",
+    message: "Unreachable",
+  });
 }
 
 export type { GenerateResult };
