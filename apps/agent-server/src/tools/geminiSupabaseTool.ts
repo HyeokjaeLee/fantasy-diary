@@ -34,13 +34,16 @@ export function createGeminiSupabaseCallableTool(params: {
   geminiEmbeddingModel: string;
   ragEmbeddingModelId: string;
   logger: Logger;
+  allowWrites?: boolean;
 }): GeminiSupabaseTool {
   const createdPlotSeedIds: string[] = [];
+  const allowWrites = params.allowWrites !== false;
+
   const declarations: FunctionDeclaration[] = [
     {
       name: "db_select",
-        description:
-          "Read-only select from Supabase. Use this to load novel state (novels/characters/locations/plot_seeds/episodes). Note: novels has 'title' column (not 'name').",
+      description:
+        "Read-only select from Supabase. Use this to load novel state (novels/characters/locations/plot_seeds/episodes). Note: novels has 'title' column (not 'name').",
       parameters: {
         type: Type.OBJECT,
         properties: {
@@ -121,82 +124,87 @@ export function createGeminiSupabaseCallableTool(params: {
         required: ["novel_id", "query", "chunk_kind", "max_episode_no"],
       },
     },
-    {
-      name: "upsert_character",
-      description:
-        "Create or update a character for this novel. Matches by (novel_id, name).",
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          novel_id: { type: Type.STRING },
-          name: { type: Type.STRING },
-          personality: {
-            type: Type.STRING,
-            description: "Character personality/traits summary.",
-          },
-          gender: {
-            type: Type.STRING,
-            description: "male|female",
-            enum: Array.from(SupabaseZod.public.Enums.gender.options),
-          },
-          birthday: {
-            type: Type.STRING,
-            description: "YYYY-MM-DD",
-          },
-        },
-        required: ["novel_id", "name", "personality", "gender", "birthday"],
-      },
-    },
-    {
-      name: "upsert_location",
-      description:
-        "Create or update a location for this novel. Matches by (novel_id, name).",
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          novel_id: { type: Type.STRING },
-          name: { type: Type.STRING },
-          situation: {
-            type: Type.STRING,
-            description:
-              "Current situation/state of this place (e.g. political climate, dangers, events in progress).",
-          },
-        },
-        required: ["novel_id", "name", "situation"],
-      },
-    },
-    {
-      name: "insert_plot_seed",
-      description:
-        "Create a new open plot seed (떡밥). Use when introducing unresolved hooks that should persist.",
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          novel_id: { type: Type.STRING },
-          title: { type: Type.STRING },
-          detail: { type: Type.STRING },
-          introduced_in_episode_id: {
-            type: Type.STRING,
-            description:
-              "Optional episode id where this plot seed was introduced (episodes.id).",
-          },
-          character_names: {
-            type: Type.ARRAY,
-            description:
-              "Optional character names related to this plot seed. Must match existing characters.name.",
-            items: { type: Type.STRING },
-          },
-          location_names: {
-            type: Type.ARRAY,
-            description:
-              "Optional location names related to this plot seed. Must match existing locations.name.",
-            items: { type: Type.STRING },
-          },
-        },
-        required: ["novel_id", "title", "detail"],
-      },
-    },
   ];
+
+  if (allowWrites) {
+    declarations.push(
+      {
+        name: "upsert_character",
+        description:
+          "Create or update a character for this novel. Matches by (novel_id, name).",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            novel_id: { type: Type.STRING },
+            name: { type: Type.STRING },
+            personality: {
+              type: Type.STRING,
+              description: "Character personality/traits summary.",
+            },
+            gender: {
+              type: Type.STRING,
+              description: "male|female",
+              enum: Array.from(SupabaseZod.public.Enums.gender.options),
+            },
+            birthday: {
+              type: Type.STRING,
+              description: "YYYY-MM-DD",
+            },
+          },
+          required: ["novel_id", "name", "personality", "gender", "birthday"],
+        },
+      },
+      {
+        name: "upsert_location",
+        description:
+          "Create or update a location for this novel. Matches by (novel_id, name).",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            novel_id: { type: Type.STRING },
+            name: { type: Type.STRING },
+            situation: {
+              type: Type.STRING,
+              description:
+                "Current situation/state of this place (e.g. political climate, dangers, events in progress).",
+            },
+          },
+          required: ["novel_id", "name", "situation"],
+        },
+      },
+      {
+        name: "insert_plot_seed",
+        description:
+          "Create a new open plot seed (떡밥). Use when introducing unresolved hooks that should persist.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            novel_id: { type: Type.STRING },
+            title: { type: Type.STRING },
+            detail: { type: Type.STRING },
+            introduced_in_episode_id: {
+              type: Type.STRING,
+              description:
+                "Optional episode id where this plot seed was introduced (episodes.id).",
+            },
+            character_names: {
+              type: Type.ARRAY,
+              description:
+                "Optional character names related to this plot seed. Must match existing characters.name.",
+              items: { type: Type.STRING },
+            },
+            location_names: {
+              type: Type.ARRAY,
+              description:
+                "Optional location names related to this plot seed. Must match existing locations.name.",
+              items: { type: Type.STRING },
+            },
+          },
+          required: ["novel_id", "title", "detail"],
+        },
+      }
+    );
+  }
 
   return {
     tool: async () => ({ functionDeclarations: declarations }),
@@ -204,7 +212,7 @@ export function createGeminiSupabaseCallableTool(params: {
     callTool: async (calls: FunctionCall[]): Promise<Part[]> => {
       const parts: Part[] = [];
 
-      params.logger.info("gemini.tool_calls", {
+      params.logger.debug("gemini.tool_calls", {
         count: calls.length,
         tools: calls.map((c) => ({ name: c.name, args: c.args })),
       });
@@ -231,21 +239,37 @@ export function createGeminiSupabaseCallableTool(params: {
         return agentError;
       };
 
-      const pushUnknownToolError = (toolName: string) => {
-        const agentError = new AgentError({
-          type: "CALLING_TOOL_ERROR",
-          code: "UNKNOWN_TOOL",
-          message: `Unknown tool: ${toolName}`,
-          details: { tool: toolName },
-        });
+       const pushUnknownToolError = (toolName: string) => {
+         const agentError = new AgentError({
+           type: "CALLING_TOOL_ERROR",
+           code: "UNKNOWN_TOOL",
+           message: `Unknown tool: ${toolName}`,
+           details: { tool: toolName },
+         });
+ 
+         parts.push({
+           functionResponse: {
+             name: toolName,
+             response: agentError.toLLMResponse(),
+           },
+         });
+       };
 
-        parts.push({
-          functionResponse: {
-            name: toolName,
-            response: agentError.toLLMResponse(),
-          },
-        });
-      };
+       const pushWriteDisabledError = (toolName: string) => {
+         const agentError = new AgentError({
+           type: "CALLING_TOOL_ERROR",
+           code: "TOOL_EXECUTION_FAILED",
+           message: `Writes are disabled for this run: ${toolName}`,
+           details: { tool: toolName },
+         });
+
+         parts.push({
+           functionResponse: {
+             name: toolName,
+             response: agentError.toLLMResponse(),
+           },
+         });
+       };
 
       for (const call of calls) {
         const name = call.name;
@@ -341,6 +365,10 @@ export function createGeminiSupabaseCallableTool(params: {
         }
 
         if (name === "upsert_character") {
+          if (!allowWrites) {
+            pushWriteDisabledError(name);
+            continue;
+          }
           try {
             const result = await upsertCharacter({
               supabase: params.supabase,
@@ -366,6 +394,10 @@ export function createGeminiSupabaseCallableTool(params: {
         }
 
         if (name === "upsert_location") {
+          if (!allowWrites) {
+            pushWriteDisabledError(name);
+            continue;
+          }
           try {
             const result = await upsertLocation({
               supabase: params.supabase,
@@ -391,6 +423,10 @@ export function createGeminiSupabaseCallableTool(params: {
         }
 
         if (name === "insert_plot_seed") {
+          if (!allowWrites) {
+            pushWriteDisabledError(name);
+            continue;
+          }
           try {
             const result = await insertPlotSeed({
               supabase: params.supabase,

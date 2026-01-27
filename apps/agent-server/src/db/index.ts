@@ -46,6 +46,11 @@ type RagSearchChunksArgs = {
   match_count?: number;
 };
 
+type EpisodeRunStatus = Database["public"]["Enums"]["episode_run_status"];
+type EpisodeReviewType = Database["public"]["Enums"]["episode_review_type"];
+type EpisodeReviewsJson = TablesInsert<"episode_reviews">["issues"];
+type EpisodeRunsJson = TablesInsert<"episode_runs">["last_review_issues"];
+
 type UpsertCharacterArgs = Pick<
   TablesInsert<"characters">,
   "novel_id" | "name" | "personality" | "gender" | "birthday"
@@ -918,6 +923,85 @@ export async function insertEpisode(params: {
   return data;
 }
 
+export async function upsertEpisodeRun(params: {
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+  novelId: string;
+  episodeNo: number;
+  status: EpisodeRunStatus;
+  attemptCount: number;
+  lastReviewIssues?: EpisodeRunsJson;
+  lastRevisionInstruction?: string | null;
+  episodeId?: string | null;
+}): Promise<void> {
+  const now = new Date().toISOString();
+
+  const row: TablesInsert<"episode_runs"> = {
+    novel_id: params.novelId,
+    episode_no: params.episodeNo,
+    status: params.status,
+    attempt_count: params.attemptCount,
+    updated_at: now,
+    ...(params.episodeId !== undefined ? { episode_id: params.episodeId } : {}),
+    ...(params.lastReviewIssues !== undefined
+      ? { last_review_issues: params.lastReviewIssues }
+      : {}),
+    ...(params.lastRevisionInstruction !== undefined
+      ? { last_revision_instruction: params.lastRevisionInstruction }
+      : {}),
+  };
+
+  const { error } = await params.supabase
+    .from("episode_runs")
+    .upsert(row, { onConflict: "novel_id,episode_no" });
+
+  if (error)
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "QUERY_FAILED",
+      message: `upsertEpisodeRun: ${error.message}`,
+      details: { table: "episode_runs", op: "upsert" },
+      retryable: true,
+    });
+}
+
+export async function insertEpisodeReview(params: {
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+  novelId: string;
+  episodeNo: number;
+  episodeId?: string | null;
+  attempt: number;
+  reviewType: EpisodeReviewType;
+  passed: boolean;
+  issues: EpisodeReviewsJson;
+  revisionInstruction?: string | null;
+  model?: string | null;
+}): Promise<void> {
+  const row: TablesInsert<"episode_reviews"> = {
+    novel_id: params.novelId,
+    episode_no: params.episodeNo,
+    attempt: params.attempt,
+    review_type: params.reviewType,
+    passed: params.passed,
+    issues: params.issues,
+    ...(params.episodeId !== undefined ? { episode_id: params.episodeId } : {}),
+    ...(params.revisionInstruction !== undefined
+      ? { revision_instruction: params.revisionInstruction }
+      : {}),
+    ...(params.model !== undefined ? { model: params.model } : {}),
+  };
+
+  const { error } = await params.supabase.from("episode_reviews").insert(row);
+
+  if (error)
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "INSERT_FAILED",
+      message: `insertEpisodeReview: ${error.message}`,
+      details: { table: "episode_reviews", op: "insert" },
+      retryable: true,
+    });
+}
+
 export async function markPlotSeedsIntroduced(params: {
   supabase: ReturnType<typeof createSupabaseAdminClient>;
   novelId: string;
@@ -993,6 +1077,78 @@ export async function indexEpisodeSummary(params: {
       code: "INSERT_FAILED",
       message: `indexEpisodeSummary: ${error.message}`,
       details: { table: "episode_chunks", op: "insert_summary" },
+      retryable: true,
+    });
+}
+
+export async function indexEpisodeFacts(params: {
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+  novelId: string;
+  episodeId: string;
+  episodeNo: number;
+  facts: string[];
+  geminiApiKey: string;
+  geminiEmbeddingModel: string;
+  ragEmbeddingModelId: string;
+}): Promise<void> {
+  const facts = Array.from(
+    new Set(
+      (params.facts ?? [])
+        .map((f) => (typeof f === "string" ? f.trim() : ""))
+        .filter((f) => f.length > 0)
+    )
+  ).slice(0, 10);
+
+  if (facts.length === 0) return;
+
+  const rows: TablesInsert<"episode_chunks">[] = [];
+
+  for (let i = 0; i < facts.length; i++) {
+    const fact = facts[i];
+    const embeddingText = fact.trim().slice(0, 4000);
+    if (!embeddingText) continue;
+
+    let embedding: number[];
+
+    try {
+      embedding = await geminiEmbedText({
+        apiKey: params.geminiApiKey,
+        model: params.geminiEmbeddingModel,
+        text: embeddingText,
+      });
+    } catch (err) {
+      throw AgentError.fromUnknown(err, {
+        type: "UPSTREAM_API_ERROR",
+        code: "GEMINI_EMBED_FAILED",
+        messagePrefix: "indexEpisodeFacts",
+        retryable: true,
+        details: { op: "gemini_embed" },
+      });
+    }
+
+    rows.push({
+      novel_id: params.novelId,
+      episode_id: params.episodeId,
+      episode_no: params.episodeNo,
+      chunk_kind: "fact",
+      chunk_index: i,
+      content: embeddingText,
+      embedding: vectorLiteral(embedding),
+      embedding_dim: embedding.length,
+      embedding_model: params.ragEmbeddingModelId,
+    });
+  }
+
+  if (rows.length === 0) return;
+
+  const { error } = await params.supabase.from("episode_chunks").insert(rows);
+
+  if (error)
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "INSERT_FAILED",
+      message: `indexEpisodeFacts: ${error.message}`,
+      details: { table: "episode_chunks", op: "insert_facts" },
       retryable: true,
     });
 }

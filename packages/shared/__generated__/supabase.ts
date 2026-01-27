@@ -165,6 +165,117 @@ export type Database = {
           },
         ]
       }
+      episode_reviews: {
+        Row: {
+          attempt: number
+          created_at: string
+          episode_id: string | null
+          episode_no: number
+          id: string
+          issues: Json
+          model: string | null
+          novel_id: string
+          passed: boolean
+          review_type: Database["public"]["Enums"]["episode_review_type"]
+          revision_instruction: string | null
+        }
+        Insert: {
+          attempt?: number
+          created_at?: string
+          episode_id?: string | null
+          episode_no: number
+          id?: string
+          issues?: Json
+          model?: string | null
+          novel_id: string
+          passed: boolean
+          review_type: Database["public"]["Enums"]["episode_review_type"]
+          revision_instruction?: string | null
+        }
+        Update: {
+          attempt?: number
+          created_at?: string
+          episode_id?: string | null
+          episode_no?: number
+          id?: string
+          issues?: Json
+          model?: string | null
+          novel_id?: string
+          passed?: boolean
+          review_type?: Database["public"]["Enums"]["episode_review_type"]
+          revision_instruction?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "episode_reviews_episode_id_fkey"
+            columns: ["episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "episode_reviews_novel_id_fkey"
+            columns: ["novel_id"]
+            isOneToOne: false
+            referencedRelation: "novels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      episode_runs: {
+        Row: {
+          attempt_count: number
+          created_at: string
+          episode_id: string | null
+          episode_no: number
+          id: string
+          last_review_issues: Json
+          last_revision_instruction: string | null
+          novel_id: string
+          status: Database["public"]["Enums"]["episode_run_status"]
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          created_at?: string
+          episode_id?: string | null
+          episode_no: number
+          id?: string
+          last_review_issues?: Json
+          last_revision_instruction?: string | null
+          novel_id: string
+          status: Database["public"]["Enums"]["episode_run_status"]
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          created_at?: string
+          episode_id?: string | null
+          episode_no?: number
+          id?: string
+          last_review_issues?: Json
+          last_revision_instruction?: string | null
+          novel_id?: string
+          status?: Database["public"]["Enums"]["episode_run_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "episode_runs_episode_id_fkey"
+            columns: ["episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "episode_runs_novel_id_fkey"
+            columns: ["novel_id"]
+            isOneToOne: false
+            referencedRelation: "novels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       /** @table episodes: 소설의 회차/에피소드(챕터) 본문 */
       episodes: {
         Row: {
@@ -525,6 +636,12 @@ export type Database = {
       }
     }
     Enums: {
+      episode_review_type: "continuity" | "consistency"
+      episode_run_status:
+        | "drafting"
+        | "reviewing"
+        | "review_failed"
+        | "persisted"
       gender: "male" | "female"
     }
     CompositeTypes: {
@@ -653,6 +770,13 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      episode_review_type: ["continuity", "consistency"],
+      episode_run_status: [
+        "drafting",
+        "reviewing",
+        "review_failed",
+        "persisted",
+      ],
       gender: ["male", "female"],
     },
   },

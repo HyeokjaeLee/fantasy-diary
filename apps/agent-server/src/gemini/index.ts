@@ -7,12 +7,17 @@ import type { GeminiSupabaseTool } from "../tools";
 import repairPromptTemplate from "./prompts/repair.md";
 import retryPrompt from "./prompts/retry.md";
 import systemPrompt from "./prompts/system.md";
+import extractFactsPrompt from "./prompts/extract_facts.md";
 import userPromptTemplate from "./prompts/user.md";
 
 type GenerateResult = {
   episode_content: string;
   story_time: string;
   resolved_plot_seed_ids?: string[];
+};
+
+type ExtractFactsResult = {
+  facts: string[];
 };
 
 const GenerateResultSchema = z
@@ -44,6 +49,20 @@ const GenerateResultSchema = z
   })
   .strict();
 
+const ExtractFactsResultSchema = z
+  .object({
+    facts: z
+      .array(
+        z
+          .string()
+          .transform((v) => v.trim())
+          .refine((v) => v.length > 0, { message: "fact must be non-empty" })
+      )
+      .max(10)
+      .default([]),
+  })
+  .strict();
+
 function parseGenerateResult(value: unknown): GenerateResult {
   const parsed = GenerateResultSchema.parse(value);
 
@@ -56,6 +75,15 @@ function parseGenerateResult(value: unknown): GenerateResult {
     story_time: parsed.story_time,
     resolved_plot_seed_ids:
       resolvedPlotSeedIds && resolvedPlotSeedIds.length > 0 ? resolvedPlotSeedIds : undefined,
+  };
+}
+
+function parseExtractFactsResult(value: unknown): ExtractFactsResult {
+  const parsed = ExtractFactsResultSchema.parse(value);
+  const deduped = Array.from(new Set(parsed.facts.map((f) => f.trim()).filter(Boolean)));
+
+  return {
+    facts: deduped.slice(0, 10),
   };
 }
 
@@ -310,6 +338,7 @@ export async function generateEpisodeWithTools(params: {
         content_tail: string;
       }
     | null;
+  revisionInstruction?: string;
 }): Promise<GenerateResult> {
   const systemInstruction = systemPrompt.trim();
 
@@ -328,7 +357,7 @@ export async function generateEpisodeWithTools(params: {
 
   const previousEpisode = params.previousEpisode ?? null;
 
-  const message = renderTemplate(userPromptTemplate, {
+  const baseMessage = renderTemplate(userPromptTemplate, {
     novelId: params.novelId,
     episodeNo: String(params.episodeNo),
     maxEpisodeNo: String(params.maxEpisodeNo),
@@ -336,6 +365,11 @@ export async function generateEpisodeWithTools(params: {
     previousEpisodeStoryTime: previousEpisode?.story_time ?? "",
     previousEpisodeContentTail: previousEpisode?.content_tail ?? "",
   }).trim();
+
+  const message = params.revisionInstruction
+    ? `${baseMessage}\n\n수정 지시:\n${params.revisionInstruction}`
+    : baseMessage;
+
   const retryMessage = retryPrompt.trim();
 
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -510,4 +544,360 @@ export async function generateEpisodeWithTools(params: {
   });
 }
 
-export type { GenerateResult };
+export async function extractEpisodeFacts(params: {
+  ai: GoogleGenAI;
+  model: string;
+  episodeContent: string;
+}): Promise<string[]> {
+  const systemInstruction = extractFactsPrompt.trim();
+
+  const chat = params.ai.chats.create({
+    model: params.model,
+    config: {
+      systemInstruction,
+      temperature: 0,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          facts: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+          },
+        },
+        required: ["facts"],
+        propertyOrdering: ["facts"],
+      },
+      tools: [],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.NONE,
+        },
+      },
+    },
+  });
+
+  const prompt = [
+    "[새 에피소드 본문]",
+    "---",
+    params.episodeContent,
+    "---",
+  ].join("\n");
+
+  const response = await chat.sendMessage({ message: prompt });
+  const text = response.text;
+  if (typeof text !== "string" || text.trim().length === 0)
+    throw new AgentError({
+      type: "UPSTREAM_API_ERROR",
+      code: "UNAVAILABLE",
+      message: "Gemini returned empty text",
+      retryable: true,
+      details: { op: "extractEpisodeFacts" },
+    });
+
+  const json = extractFirstJsonObject(text);
+  const parsed = parseExtractFactsResult(json);
+  return parsed.facts;
+}
+
+function normalizeReviewSeverity(
+  value: string
+): "low" | "medium" | "high" {
+  const v = value.trim().toLowerCase();
+
+  if (
+    v === "high" ||
+    v === "critical" ||
+    v === "severe" ||
+    v === "major" ||
+    v === "상" ||
+    v === "높음"
+  )
+    return "high";
+
+  if (
+    v === "medium" ||
+    v === "moderate" ||
+    v === "mid" ||
+    v === "중" ||
+    v === "보통"
+  )
+    return "medium";
+
+  if (v === "low" || v === "minor" || v === "하" || v === "낮음") return "low";
+
+  return "medium";
+}
+
+const ReviewIssueSchema = z
+  .object({
+    severity: z
+      .string()
+      .transform((v) => normalizeReviewSeverity(v)),
+    description: z.string().transform((v) => v.trim()),
+  })
+  .strict();
+
+type ReviewResult = {
+  passed: boolean;
+  issues: Array<z.infer<typeof ReviewIssueSchema>>;
+  revision_instruction?: string;
+};
+
+const ReviewResultSchema = z
+  .object({
+    passed: z.boolean(),
+    issues: z.array(ReviewIssueSchema).default([]),
+    revision_instruction: z
+      .string()
+      .transform((v) => v.trim())
+      .optional(),
+  })
+  .strict();
+
+export async function reviewEpisodeContinuity(params: {
+  ai: GoogleGenAI;
+  model: string;
+  previousEpisodes: Array<{ episode_no: number; story_time: string | null; content_tail: string }>;
+  draft: GenerateResult;
+}): Promise<ReviewResult> {
+  const previous = params.previousEpisodes
+    .slice()
+    .sort((a, b) => a.episode_no - b.episode_no)
+    .map((e) => {
+      const storyTime = e.story_time ? `story_time: ${e.story_time}` : "";
+
+      return `에피소드 ${e.episode_no} (${storyTime})\n---\n${e.content_tail}\n---`;
+    })
+    .join("\n\n");
+
+  const systemInstruction = [
+    "너는 연재 소설의 연속성 검토자다. 너의 임무는 '검토'이며, 새 내용을 창작하지 않는다.",
+    "입력: 이전 2개 에피소드(끝부분 발췌) + 새 에피소드 초안 전체.",
+    "출력: 오직 JSON 객체 1개만 (마크다운/설명문/코드블록 금지).",
+    "JSON 스키마:",
+    "- passed: boolean",
+    "- issues: { severity: 'low'|'medium'|'high', description: string }[]",
+    "- revision_instruction?: string",
+    "규칙:",
+    "- severity는 반드시 소문자 'low'|'medium'|'high' 중 하나.",
+    "- description는 근거가 되도록 구체적으로 (어떤 불연속인지 + 왜 문제인지).",
+    "- passed=false면 revision_instruction에 '작가에게 전달할 수정 지시'를 단계별로 작성.",
+    "- passed=true면 revision_instruction은 생략하거나 빈 문자열.",
+    "검토 체크리스트:",
+    "1) 첫 장면 연결: 새 초반이 직전 회차 마지막 장면/대사/행동의 즉시 결과인가?",
+    "2) 시간/장소: 시간 점프/장소 이동이 있다면 전환 과정이 서술되는가?",
+    "3) 인물 상태: 부상/감정/목표/관계가 갑자기 바뀌지 않는가?",
+    "4) 새 사건/인물: 전조 없이 뜬금 사건/중요 인물 등장/중요 설정 추가가 없는가?",
+    "5) 미해결 훅: 직전 긴장/갈등(예: 의문의 전화)이 무시되지 않는가?",
+    "revision_instruction 작성 가이드:",
+    "- '새 에피소드 첫 문단을 직전 마지막 액션의 반응으로 시작'처럼 바로 적용 가능한 지시",
+    "- 필요하면 '추가해야 할 연결 문단/장면'을 명시",
+  ].join("\n");
+
+  const chat = params.ai.chats.create({
+    model: params.model,
+    config: {
+      systemInstruction,
+      temperature: 0,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          passed: { type: Type.BOOLEAN },
+          issues: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                severity: { type: Type.STRING },
+                description: { type: Type.STRING },
+              },
+              required: ["severity", "description"],
+            },
+          },
+          revision_instruction: { type: Type.STRING },
+        },
+        required: ["passed", "issues"],
+        propertyOrdering: ["passed", "issues", "revision_instruction"],
+      },
+      tools: [],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.NONE,
+        },
+      },
+    },
+  });
+
+  const prompt = [
+    "[이전 에피소드들]",
+    previous || "(없음)",
+    "\n[새 에피소드 초안]",
+    `story_time: ${params.draft.story_time}`,
+    "---",
+    params.draft.episode_content,
+    "---",
+  ].join("\n");
+
+  const response = await chat.sendMessage({
+    message: prompt,
+  });
+
+  const text = response.text;
+  if (typeof text !== "string" || text.trim().length === 0)
+    throw new AgentError({
+      type: "UPSTREAM_API_ERROR",
+      code: "UNAVAILABLE",
+      message: "Gemini returned empty text",
+      retryable: true,
+      details: { op: "reviewEpisodeContinuity" },
+    });
+
+  const json = extractFirstJsonObject(text);
+  const parsed = ReviewResultSchema.parse(json);
+
+  const revisionInstruction = parsed.revision_instruction?.trim();
+
+  return {
+    passed: parsed.passed,
+    issues: parsed.issues,
+    ...(revisionInstruction ? { revision_instruction: revisionInstruction } : {}),
+  };
+}
+
+export async function reviewEpisodeConsistency(params: {
+  ai: GoogleGenAI;
+  model: string;
+  storyBible?: string;
+  previousEpisodes: Array<{ episode_no: number; story_time: string | null; content_tail: string }>;
+  groundingChunks: Array<{
+    kind: "fact" | "episode";
+    episode_no: number;
+    similarity: number;
+    content: string;
+  }>;
+  extractedFacts: string[];
+  draft: GenerateResult;
+}): Promise<ReviewResult> {
+  const previous = params.previousEpisodes
+    .slice()
+    .sort((a, b) => a.episode_no - b.episode_no)
+    .map((e) => {
+      const storyTime = e.story_time ? `story_time: ${e.story_time}` : "";
+
+      return `에피소드 ${e.episode_no} (${storyTime})\n---\n${e.content_tail}\n---`;
+    })
+    .join("\n\n");
+
+  const grounding = params.groundingChunks
+    .slice()
+    .sort((a, b) => {
+      if (a.episode_no !== b.episode_no) return a.episode_no - b.episode_no;
+      return b.similarity - a.similarity;
+    })
+    .map((c) => {
+      const sim = Number.isFinite(c.similarity) ? c.similarity.toFixed(4) : String(c.similarity);
+      return `- (${c.kind}) ep=${c.episode_no} sim=${sim}\n${c.content}`;
+    })
+    .join("\n\n");
+
+  const extractedFacts = params.extractedFacts.map((f) => `- ${f}`).join("\n");
+  const storyBible = (params.storyBible ?? "").trim();
+
+  const systemInstruction = [
+    "너는 연재 소설의 설정/사실 충돌 검토자다. 너의 임무는 '검토'이며, 새 내용을 창작하지 않는다.",
+    "입력: (1) 직전 1~2개 에피소드 발췌, (2) 과거 에피소드에서 검색된 근거(요약/사실 청크), (3) 이번 에피소드 초안, (4) 이번 에피소드에서 추출된 사실 목록, (5) (선택) story_bible.",
+    "출력: 오직 JSON 객체 1개만 (마크다운/설명문/코드블록 금지).",
+    "JSON 스키마:",
+    "- passed: boolean",
+    "- issues: { severity: 'low'|'medium'|'high', description: string }[]",
+    "- revision_instruction?: string",
+    "규칙:",
+    "- severity는 반드시 소문자 'low'|'medium'|'high' 중 하나.",
+    "- description는 근거가 되도록 구체적으로: (어떤 사실/설정이) (어떤 과거 근거와) (어떻게) 충돌하는지.",
+    "- passed=false면 revision_instruction에 '작가에게 전달할 수정 지시'를 단계별로 작성.",
+    "- passed=true면 revision_instruction은 생략하거나 빈 문자열.",
+    "검토 체크리스트:",
+    "1) 이번 에피소드 추출 사실(extracted facts)이 과거 근거(grounding)와 직접 충돌하는가?",
+    "2) story_bible이 제공된 경우, story_bible의 규칙/설정/세계관과 모순되는가?",
+    "3) 시간/장소/인물 상태(부상/소지품/관계/목표)가 근거 없이 바뀌는가?",
+    "4) 모호한 표현으로 인해 사실 해석이 갈리는 경우, 충돌 가능성을 낮추도록 문장을 명확히 하라고 지시할 것.",
+    "revision_instruction 작성 가이드:",
+    "- 충돌을 해결하는 최소 수정(문장 교정/추가 설명/장면 삽입)으로 지시.",
+    "- 불확실하면 '근거 문장(과거 사실)을 존중'하도록 수정 지시.",
+  ].join("\n");
+
+  const chat = params.ai.chats.create({
+    model: params.model,
+    config: {
+      systemInstruction,
+      temperature: 0,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          passed: { type: Type.BOOLEAN },
+          issues: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                severity: { type: Type.STRING },
+                description: { type: Type.STRING },
+              },
+              required: ["severity", "description"],
+            },
+          },
+          revision_instruction: { type: Type.STRING },
+        },
+        required: ["passed", "issues"],
+        propertyOrdering: ["passed", "issues", "revision_instruction"],
+      },
+      tools: [],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.NONE,
+        },
+      },
+    },
+  });
+
+  const prompt = [
+    storyBible ? "[story_bible]\n---\n" + storyBible + "\n---" : "[story_bible]\n(없음)",
+    "\n[직전 에피소드 발췌]",
+    previous || "(없음)",
+    "\n[과거 근거(검색 결과)]",
+    grounding || "(없음)",
+    "\n[이번 에피소드에서 추출된 사실 목록]",
+    extractedFacts || "(없음)",
+    "\n[새 에피소드 초안]",
+    `story_time: ${params.draft.story_time}`,
+    "---",
+    params.draft.episode_content,
+    "---",
+  ].join("\n");
+
+  const response = await chat.sendMessage({ message: prompt });
+  const text = response.text;
+  if (typeof text !== "string" || text.trim().length === 0)
+    throw new AgentError({
+      type: "UPSTREAM_API_ERROR",
+      code: "UNAVAILABLE",
+      message: "Gemini returned empty text",
+      retryable: true,
+      details: { op: "reviewEpisodeConsistency" },
+    });
+
+  const json = extractFirstJsonObject(text);
+  const parsed = ReviewResultSchema.parse(json);
+  const revisionInstruction = parsed.revision_instruction?.trim();
+
+  return {
+    passed: parsed.passed,
+    issues: parsed.issues,
+    ...(revisionInstruction ? { revision_instruction: revisionInstruction } : {}),
+  };
+}
+
+export type { GenerateResult, ReviewResult, ExtractFactsResult };
