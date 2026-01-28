@@ -286,7 +286,7 @@ export function createGeminiSupabaseCallableTool(params: {
 
             const ms = Date.now() - startedAt;
             const count = Array.isArray(result) ? result.length : undefined;
-            params.logger.info("tool.db_select", { ms, rows: count });
+          params.logger.debug("tool.db_select", { ms, rows: count });
 
             parts.push({
               functionResponse: {
