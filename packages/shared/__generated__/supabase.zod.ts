@@ -18,15 +18,21 @@ export const publicTables = {
       /** @column characters.novel_id: 소속 소설 ID (public.novels.id) */
       novel_id: z.uuid(),
       /** @column characters.name: 캐릭터 이름 */
-      name: z.string(),
+      name: z.string().nullable(),
       /** @column characters.created_at: 생성 시각(기본값 now()) */
       created_at: z.iso.datetime({ offset: true }),
       /** @column characters.personality: 캐릭터 성격(필수) */
       personality: z.string(),
       /** @column characters.gender: 캐릭터 성별(필수): male|female */
-      gender: publicEnums.gender,
+      gender: publicEnums.gender.nullable(),
       /** @column characters.birthday: 캐릭터 생일(필수): YYYY-MM-DD */
-      birthday: z.iso.date(),
+      birthday: z.iso.date().nullable(),
+      name_revealed: z.boolean(),
+      descriptor: z.string().nullable(),
+      first_appearance_episode_id: z.uuid().nullable(),
+      first_appearance_excerpt: z.string().nullable(),
+      name_revealed_in_episode_id: z.uuid().nullable(),
+      name_evidence_excerpt: z.string().nullable(),
     }).strict(),
     Insert: z.object({
       /** @column characters.id: 캐릭터 ID (UUID, 기본값 gen_random_uuid()) */
@@ -34,15 +40,21 @@ export const publicTables = {
       /** @column characters.novel_id: 소속 소설 ID (public.novels.id) */
       novel_id: z.uuid(),
       /** @column characters.name: 캐릭터 이름 */
-      name: z.string(),
+      name: z.string().nullable().optional(),
       /** @column characters.created_at: 생성 시각(기본값 now()) */
       created_at: z.iso.datetime({ offset: true }).optional(),
       /** @column characters.personality: 캐릭터 성격(필수) */
       personality: z.string(),
       /** @column characters.gender: 캐릭터 성별(필수): male|female */
-      gender: publicEnums.gender,
+      gender: publicEnums.gender.nullable().optional(),
       /** @column characters.birthday: 캐릭터 생일(필수): YYYY-MM-DD */
-      birthday: z.iso.date(),
+      birthday: z.iso.date().nullable().optional(),
+      name_revealed: z.boolean().optional(),
+      descriptor: z.string().nullable().optional(),
+      first_appearance_episode_id: z.uuid().nullable().optional(),
+      first_appearance_excerpt: z.string().nullable().optional(),
+      name_revealed_in_episode_id: z.uuid().nullable().optional(),
+      name_evidence_excerpt: z.string().nullable().optional(),
     }).strict(),
     Update: z.object({
       /** @column characters.id: 캐릭터 ID (UUID, 기본값 gen_random_uuid()) */
@@ -50,15 +62,21 @@ export const publicTables = {
       /** @column characters.novel_id: 소속 소설 ID (public.novels.id) */
       novel_id: z.uuid().optional(),
       /** @column characters.name: 캐릭터 이름 */
-      name: z.string().optional(),
+      name: z.string().nullable().optional(),
       /** @column characters.created_at: 생성 시각(기본값 now()) */
       created_at: z.iso.datetime({ offset: true }).optional(),
       /** @column characters.personality: 캐릭터 성격(필수) */
       personality: z.string().optional(),
       /** @column characters.gender: 캐릭터 성별(필수): male|female */
-      gender: publicEnums.gender.optional(),
+      gender: publicEnums.gender.nullable().optional(),
       /** @column characters.birthday: 캐릭터 생일(필수): YYYY-MM-DD */
-      birthday: z.iso.date().optional(),
+      birthday: z.iso.date().nullable().optional(),
+      name_revealed: z.boolean().optional(),
+      descriptor: z.string().nullable().optional(),
+      first_appearance_episode_id: z.uuid().nullable().optional(),
+      first_appearance_excerpt: z.string().nullable().optional(),
+      name_revealed_in_episode_id: z.uuid().nullable().optional(),
+      name_evidence_excerpt: z.string().nullable().optional(),
     }).strict(),
   },
   /** @table episode_chunks: 에피소드 기반 RAG를 위한 청크/요약 및 임베딩 저장(근거 검색용) */

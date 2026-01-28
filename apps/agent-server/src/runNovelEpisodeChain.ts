@@ -20,6 +20,7 @@ function toPositiveInt(value: unknown, fallback: number): number {
     const n = Number(value);
     if (Number.isFinite(n) && n >= 0) return Math.floor(n);
   }
+
   return fallback;
 }
 
@@ -30,6 +31,7 @@ function toBoolean(value: unknown, fallback: boolean): boolean {
     if (v === "true" || v === "1" || v === "yes" || v === "y") return true;
     if (v === "false" || v === "0" || v === "no" || v === "n") return false;
   }
+
   return fallback;
 }
 
@@ -177,9 +179,87 @@ async function getEpisodeNos(params: {
       details: { table: "episodes", op: "select_episode_no", novelId },
       retryable: true,
     });
+
   return (data ?? [])
     .map((r) => r.episode_no)
     .filter((n): n is number => typeof n === "number");
+}
+
+async function countByNovelId(params: {
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+  table: string;
+  novelId: string;
+}): Promise<number> {
+  const { supabase, table, novelId } = params;
+  // Use dynamic table names with 'any' to avoid deep type instantiation.
+  const client = supabase as unknown as any;
+  const { count, error } = await client
+    .from(table)
+    .select("id", { head: true, count: "exact" })
+    .eq("novel_id", novelId);
+  if (error)
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "QUERY_FAILED",
+      message: `count ${table}: ${error.message}`,
+      details: { table, novelId },
+      retryable: true,
+    });
+
+  return count ?? 0;
+}
+
+async function countPlotSeedJoins(params: {
+  supabase: ReturnType<typeof createSupabaseAdminClient>;
+  novelId: string;
+}): Promise<{ plot_seed_characters: number; plot_seed_locations: number }> {
+  const { supabase, novelId } = params;
+
+  const { data: plotSeeds, error: psErr } = await supabase
+    .from("plot_seeds")
+    .select("id")
+    .eq("novel_id", novelId)
+    .limit(2000);
+  if (psErr)
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "QUERY_FAILED",
+      message: `load plot_seeds ids: ${psErr.message}`,
+      details: { table: "plot_seeds", novelId },
+      retryable: true,
+    });
+
+  const ids = (plotSeeds ?? []).map((r) => r.id).filter(Boolean);
+  if (ids.length === 0)
+    return { plot_seed_characters: 0, plot_seed_locations: 0 };
+
+  const { count: c1, error: e1 } = await supabase
+    .from("plot_seed_characters")
+    .select("plot_seed_id", { head: true, count: "exact" })
+    .in("plot_seed_id", ids);
+  if (e1)
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "QUERY_FAILED",
+      message: `count plot_seed_characters: ${e1.message}`,
+      details: { table: "plot_seed_characters", novelId },
+      retryable: true,
+    });
+
+  const { count: c2, error: e2 } = await supabase
+    .from("plot_seed_locations")
+    .select("plot_seed_id", { head: true, count: "exact" })
+    .in("plot_seed_id", ids);
+  if (e2)
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "QUERY_FAILED",
+      message: `count plot_seed_locations: ${e2.message}`,
+      details: { table: "plot_seed_locations", novelId },
+      retryable: true,
+    });
+
+  return { plot_seed_characters: c1 ?? 0, plot_seed_locations: c2 ?? 0 };
 }
 
 async function runOnceCli(params: {
@@ -188,11 +268,15 @@ async function runOnceCli(params: {
   storyTimeStepMinutes: number;
   startStoryTimeIso?: string;
 }): Promise<RunResult> {
-  const { novelId, maxTiktaka, storyTimeStepMinutes, startStoryTimeIso } = params;
+  const { novelId, maxTiktaka, storyTimeStepMinutes, startStoryTimeIso } =
+    params;
+
+  // Use an absolute path so this works regardless of current working directory.
+  const entrypointPath = new URL("./index.ts", import.meta.url).pathname;
 
   const args: string[] = [
     "bun",
-    "src/index.ts",
+    entrypointPath,
     `--kind=daily`,
     `--novelId=${novelId}`,
     `--maxTiktaka=${maxTiktaka}`,
@@ -212,6 +296,24 @@ async function runOnceCli(params: {
 
   // index.ts는 실패 시에도 JSON을 출력하지만, 예외로 터지면 stderr에 남는다.
   if (proc.exitCode !== 0 && !stdout) {
+    const lowered = stderr.toLowerCase();
+    const isRateLimited =
+      lowered.includes("\"code\":429") ||
+      lowered.includes("status: 429") ||
+      lowered.includes("resource_exhausted") ||
+      lowered.includes("rate limited") ||
+      lowered.includes("rate_limited");
+
+    if (isRateLimited) {
+      throw new AgentError({
+        type: "UPSTREAM_API_ERROR",
+        code: "RATE_LIMITED",
+        message: "agent-server run rate-limited (429)",
+        retryable: true,
+        details: { stderr },
+      });
+    }
+
     throw new AgentError({
       type: "UNEXPECTED_ERROR",
       code: "UNKNOWN",
@@ -239,9 +341,7 @@ async function main(): Promise<void> {
   const novelId = typeof args.novelId === "string" ? args.novelId : undefined;
   assert(novelId, "Missing required arg: --novelId");
 
-  const targetEpisodes = toPositiveInt(args.targetEpisodes, 5);
   const maxTiktaka = toPositiveInt(args.maxTiktaka, 2);
-  const maxRestarts = toPositiveInt(args.maxRestarts, 5);
   const cleanStart = toBoolean(args.cleanStart, false);
   const storyTimeStepMinutes = toPositiveInt(args.storyTimeStepMinutes, 5);
   const startStoryTimeIso =
@@ -274,122 +374,108 @@ async function main(): Promise<void> {
     });
 
   if (cleanStart) {
-    console.error("[chain] cleanStart=true: deleting novel data except novels...");
+    console.error(
+      "[chain] cleanStart=true: deleting novel data except novels...",
+    );
     await deleteNovelDataExceptNovels({ supabase, novelId });
   }
 
-  for (let restart = 0; restart <= maxRestarts; restart++) {
-    const episodeNosBefore = await getEpisodeNos({ supabase, novelId });
+  const episodeNosBefore = await getEpisodeNos({ supabase, novelId });
+  console.error(
+    `[run] before generate: existing=${JSON.stringify(episodeNosBefore)}`,
+  );
 
-    // 처음부터 시작해야 하는 시나리오에서는 0이어야 정상. (미리 존재하면 사용자 지시대로 삭제해도 되지만,
-    // 여기서는 실패 시에만 정리하도록 하고, 기존 에피소드가 있으면 '추가 생성'로 취급한다.)
-    let progress = episodeNosBefore.length;
-
-    console.error(
-      `[chain] restart=${restart}/${maxRestarts} start progress=${progress}/${targetEpisodes} existing=${JSON.stringify(
-        episodeNosBefore,
-      )}`,
-    );
-
-    while (progress < targetEpisodes) {
-      let run: RunResult;
-      try {
-        console.error(
-          `[chain] restart=${restart} running next (progress=${progress}/${targetEpisodes})...`,
-        );
-        const t0 = Date.now();
-        run = await runOnceCli({
-          novelId,
-          maxTiktaka,
-          storyTimeStepMinutes,
-          startStoryTimeIso,
-        });
-        console.error(
-          `[chain] restart=${restart} finished in ${Date.now() - t0}ms`,
-        );
-      } catch {
-        // 실패(예: 모델/파서 예외로 프로세스가 JSON 없이 종료)도 동일하게 롤백 후 재시작.
-        console.error(
-          `[chain] restart=${restart} cli crashed (no JSON). cleaning up and restarting from ep1...`,
-        );
-        await deleteNovelDataExceptNovels({ supabase, novelId });
-        progress = 0;
-        break;
-      }
-
-      const first = run.results?.[0];
-      const status = first?.status;
-      const episodeNo = first?.episode_no;
-      const issues = first?.issues;
-
-      if (!run.ok || status !== "ok" || typeof episodeNo !== "number") {
-        // 실패 규칙: novels 제외 전부 삭제 후 1편부터 다시 생성
-        console.error(
-          `[chain] restart=${restart} run failed: ok=${String(run.ok)} status=${String(
-            status,
-          )} episodeNo=${String(episodeNo)}. cleaning up and restarting from ep1...`,
-        );
-
-        if (issues) {
-          const serialized = (() => {
-            try {
-              return JSON.stringify(issues);
-            } catch {
-              return String(issues);
-            }
-          })();
-          console.error(
-            `[chain] failure issues (truncated): ${serialized.slice(0, 2000)}`,
-          );
-        }
-
-        await deleteNovelDataExceptNovels({ supabase, novelId });
-        progress = 0;
-        break;
-      }
-
-      progress++;
-
-      console.error(
-        `[chain] restart=${restart} persisted episode_no=${episodeNo} (progress=${progress}/${targetEpisodes})`,
-      );
-    }
-
-    if (progress >= targetEpisodes) {
-      const episodeNos = await getEpisodeNos({ supabase, novelId });
-      const ok = episodeNos.length >= targetEpisodes;
-      if (!ok)
-        throw new AgentError({
-          type: "UNEXPECTED_ERROR",
-          code: "UNKNOWN",
-          message: "Expected episodes were not persisted",
-          details: { novelId, episodeNos },
-        });
-
-      console.info(
-        JSON.stringify(
-          {
-            ok: true,
-            novel: { id: novelRow.id, title: novelRow.title },
-            targetEpisodes,
-            episode_nos: episodeNos,
-            maxTiktaka,
-            restarts: restart,
-          },
-          null,
-          2,
-        ),
-      );
-      return;
-    }
+  let run: RunResult;
+  try {
+    console.error("[run] generating exactly one episode...");
+    const t0 = Date.now();
+    run = await runOnceCli({
+      novelId,
+      maxTiktaka,
+      storyTimeStepMinutes,
+      startStoryTimeIso,
+    });
+    console.error(`[run] finished in ${Date.now() - t0}ms`);
+  } catch (err) {
+    const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+    console.error(`[run] cli crashed (no JSON): ${detail}`);
+    throw err;
   }
 
-  throw new AgentError({
-    type: "UNEXPECTED_ERROR",
-    code: "UNKNOWN",
-    message: "Failed to generate target episodes within restart budget",
-    details: { novelId, targetEpisodes, maxRestarts },
-  });
+  const first = run.results?.[0];
+  const status = first?.status;
+  const episodeNo = first?.episode_no;
+  const issues = first?.issues;
+
+  if (!run.ok || status !== "ok" || typeof episodeNo !== "number") {
+    if (issues) {
+      const serialized = (() => {
+        try {
+          return JSON.stringify(issues);
+        } catch {
+          return String(issues);
+        }
+      })();
+      console.error(`[run] failure issues (truncated): ${serialized.slice(0, 2000)}`);
+    }
+
+    throw new AgentError({
+      type: "UNEXPECTED_ERROR",
+      code: "UNKNOWN",
+      message: "Episode generation failed",
+      details: { novelId, ok: run.ok, status, episodeNo },
+    });
+  }
+
+  const episodeNosAfter = await getEpisodeNos({ supabase, novelId });
+  const expected = Array.from({ length: episodeNosAfter.length }, (_v, i) => i + 1);
+  const contiguous = episodeNosAfter.every((n, idx) => n === expected[idx]);
+
+  const counts = {
+    episodes: await countByNovelId({
+      supabase,
+      table: "episodes",
+      novelId,
+    }),
+    episode_chunks: await countByNovelId({
+      supabase,
+      table: "episode_chunks",
+      novelId,
+    }),
+    characters: await countByNovelId({
+      supabase,
+      table: "characters",
+      novelId,
+    }),
+    locations: await countByNovelId({
+      supabase,
+      table: "locations",
+      novelId,
+    }),
+    plot_seeds: await countByNovelId({
+      supabase,
+      table: "plot_seeds",
+      novelId,
+    }),
+    ...(await countPlotSeedJoins({ supabase, novelId })),
+  };
+
+  console.info(
+    JSON.stringify(
+      {
+        ok: true,
+        novel: { id: novelRow.id, title: novelRow.title },
+        created_episode_no: episodeNo,
+        episode_nos_before: episodeNosBefore,
+        episode_nos_after: episodeNosAfter,
+        contiguous,
+        maxTiktaka,
+        counts,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 main().catch((err) => {

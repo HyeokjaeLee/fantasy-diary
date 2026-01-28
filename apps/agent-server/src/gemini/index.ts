@@ -9,6 +9,7 @@ import retryPrompt from "./prompts/retry.md";
 import systemPrompt from "./prompts/system.md";
 import systemPromptCompact from "./prompts/system_compact.md";
 import extractFactsPrompt from "./prompts/extract_facts.md";
+import extractEntitiesPrompt from "./prompts/extract_entities.md";
 import extractStoryTimePrompt from "./prompts/extract_story_time.md";
 import userPromptTemplate from "./prompts/user.md";
 
@@ -24,6 +25,39 @@ type EpisodeDraft = GenerateResult & {
 type ExtractFactsResult = {
   facts: string[];
 };
+
+type ExtractEntitiesResult = {
+  characters: Array<{
+    id?: string;
+    name: string | null;
+    name_revealed: boolean;
+    descriptor?: string | null;
+    first_appearance_excerpt?: string | null;
+    name_evidence_excerpt?: string | null;
+    personality: string;
+    gender?: "male" | "female" | null;
+    birthday?: string | null;
+  }>;
+  locations: Array<{
+    name: string;
+    situation: string;
+  }>;
+  plot_seeds: Array<{
+    title: string;
+    detail: string;
+    character_ids?: string[];
+    character_names?: string[];
+    location_names?: string[];
+  }>;
+};
+
+function normalizeGender(value: string): "male" | "female" | null | undefined {
+  const v = value.trim().toLowerCase();
+  if (!v) return undefined;
+  if (v === "male" || v === "m" || v === "남" || v === "남성" || v === "남자") return "male";
+  if (v === "female" || v === "f" || v === "여" || v === "여성" || v === "여자") return "female";
+  return undefined;
+}
 
 const GenerateResultSchema = z
   .object({
@@ -57,11 +91,118 @@ const ExtractFactsResultSchema = z
   })
   .strict();
 
+const ExtractEntitiesResultSchema = z
+  .object({
+    characters: z
+      .array(
+        z
+          .object({
+            id: z
+              .string()
+              .transform((v) => v.trim())
+              .refine(
+                (v) =>
+                  v.length === 0 ||
+                  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+                    v,
+                  ),
+                { message: "id must be a uuid" },
+              )
+              .transform((v) => (v.length === 0 ? undefined : v))
+              .optional(),
+            name: z
+              .string()
+              .transform((v) => v.trim())
+              .transform((v) => (v.length === 0 ? null : v))
+              .nullable(),
+            name_revealed: z.boolean().optional(),
+            descriptor: z
+              .string()
+              .transform((v) => v.trim())
+              .transform((v) => (v.length === 0 ? null : v))
+              .nullable()
+              .optional(),
+            first_appearance_excerpt: z
+              .string()
+              .transform((v) => v.trim())
+              .transform((v) => (v.length === 0 ? null : v))
+              .nullable()
+              .optional(),
+            name_evidence_excerpt: z
+              .string()
+              .transform((v) => v.trim())
+              .transform((v) => (v.length === 0 ? null : v))
+              .nullable()
+              .optional(),
+            personality: z.string().transform((v) => v.trim()),
+            gender: z
+              .string()
+              .transform((v) => normalizeGender(v))
+              .optional(),
+            birthday: z
+              .preprocess(
+                (v) =>
+                  typeof v === "string"
+                    ? (() => {
+                        const s = v.trim();
+                        if (!s) return null;
+                        return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+                      })()
+                    : v,
+                z.string().nullable()
+              )
+              .optional(),
+          })
+          .strict()
+          .refine((v) => v.personality.length > 0, { message: "character personality required" })
+      )
+      .default([]),
+    locations: z
+      .array(
+        z
+          .object({
+            name: z.string().transform((v) => v.trim()),
+            situation: z.string().transform((v) => v.trim()),
+          })
+          .strict()
+          .refine((v) => v.name.length > 0, { message: "location name required" })
+          .refine((v) => v.situation.length > 0, { message: "location situation required" })
+      )
+      .default([]),
+    plot_seeds: z
+      .array(
+        z
+          .object({
+            title: z.string().transform((v) => v.trim()),
+            detail: z.string().transform((v) => v.trim()),
+            character_ids: z
+              // NOTE: 모델이 종종 uuid가 아닌 값(예: '나')을 반환한다.
+              // 여기서는 파서를 깨지 않도록 string으로 받고, parse 단계에서 uuid만 필터링한다.
+              .array(z.string().transform((v) => v.trim()).refine(Boolean))
+              .optional(),
+            character_names: z
+              .array(z.string().transform((v) => v.trim()).refine(Boolean))
+              .optional(),
+            location_names: z
+              .array(z.string().transform((v) => v.trim()).refine(Boolean))
+              .optional(),
+          })
+          .strict()
+          .refine((v) => v.title.length > 0, { message: "plot seed title required" })
+          .refine((v) => v.detail.length > 0, { message: "plot seed detail required" })
+      )
+      .default([]),
+  })
+  .strict();
+
 function parseGenerateResult(value: unknown): GenerateResult {
   const parsed = GenerateResultSchema.parse(value);
 
+  const isUuid = (v: string): boolean =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
   const resolvedPlotSeedIds = parsed.resolved_plot_seed_ids
-    ? Array.from(new Set(parsed.resolved_plot_seed_ids))
+    ? Array.from(new Set(parsed.resolved_plot_seed_ids)).filter(isUuid)
     : undefined;
 
   return {
@@ -93,6 +234,154 @@ function parseExtractFactsResult(value: unknown): ExtractFactsResult {
   return {
     facts: deduped.slice(0, 10),
   };
+}
+
+function parseExtractEntitiesResult(value: unknown): ExtractEntitiesResult {
+  const parsed = ExtractEntitiesResultSchema.parse(value);
+
+  const isUuid = (v: string): boolean =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
+  const bannedCharacterNames = new Set(
+    [
+      "나",
+      "저",
+      "우리",
+      "너",
+      "너희",
+      "당신",
+      "그",
+      "그녀",
+      "그들",
+      "이사람",
+      "저사람",
+      "주인공",
+      "남자",
+      "여자",
+      "사내",
+      "소년",
+      "소녀",
+      "아이",
+      "사람",
+      "괴한",
+      "무리",
+      "운전자",
+      "직원",
+      "경찰",
+      "형사",
+      "의사",
+      "간호사",
+      "병사",
+      "군인",
+    ].map((v) => v.replaceAll(" ", ""))
+  );
+
+  const normalizeCharacterName = (nameRaw: string | null): string | null => {
+    const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
+    if (!name) return null;
+    const compact = name.replaceAll(" ", "");
+    if (compact.length < 2) return null;
+    if (bannedCharacterNames.has(compact)) return null;
+    // Avoid placeholders like "남자1", "여자2"
+    if (/^(남자|여자|사람|괴한)\d+$/.test(compact)) return null;
+    return name;
+  };
+
+  const dedupeBy = <T>(items: T[], key: (t: T) => string): T[] => {
+    const map = new Map<string, T>();
+    for (const item of items) {
+      const k = key(item).trim();
+      if (!k) continue;
+      if (!map.has(k)) map.set(k, item);
+    }
+    return Array.from(map.values());
+  };
+
+  const characters = dedupeBy(parsed.characters, (c) => {
+    const id = typeof c.id === "string" ? c.id.trim() : "";
+    if (id) return `id:${id}`;
+    const name = normalizeCharacterName(c.name);
+    if (name) return `name:${name}`;
+    const desc = typeof c.descriptor === "string" ? c.descriptor.trim() : "";
+    return desc ? `desc:${desc}` : "";
+  })
+    .map((c) => {
+      const id = typeof c.id === "string" && c.id.trim().length > 0 ? c.id.trim() : undefined;
+      const rawName = typeof c.name === "string" ? c.name.trim() : "";
+      const rawCompact = rawName.replaceAll(" ", "");
+      const name = normalizeCharacterName(c.name);
+      const nameRevealed = Boolean(
+        typeof c.name_revealed === "boolean" ? c.name_revealed && Boolean(name) : Boolean(name)
+      );
+      let descriptor = typeof c.descriptor === "string" ? c.descriptor.trim() : null;
+
+      // 모델이 name에 대명사/일반명사를 넣고 descriptor를 생략하는 경우가 잦다.
+      // name을 버리는 대신 descriptor로 강등해서 캐릭터 레코드가 완전히 사라지지 않게 한다.
+      if (!nameRevealed && (!descriptor || descriptor.length === 0) && rawCompact) {
+        if (["나", "저", "우리"].includes(rawCompact)) {
+          descriptor = "화자(1인칭)";
+        } else {
+          descriptor = `${rawName}로 지칭되는 인물/존재`;
+        }
+      }
+
+      descriptor = descriptor && descriptor.trim().length > 0 ? descriptor.trim() : null;
+      const firstExcerpt =
+        typeof c.first_appearance_excerpt === "string" ? c.first_appearance_excerpt.trim() : null;
+      const nameEvidence =
+        typeof c.name_evidence_excerpt === "string" ? c.name_evidence_excerpt.trim() : null;
+
+      return {
+        ...(id ? { id } : {}),
+        name: nameRevealed ? name : null,
+        name_revealed: nameRevealed,
+        ...(descriptor ? { descriptor } : {}),
+        ...(firstExcerpt ? { first_appearance_excerpt: firstExcerpt } : {}),
+        ...(nameEvidence && nameRevealed ? { name_evidence_excerpt: nameEvidence } : {}),
+        personality: c.personality.trim(),
+        ...(typeof c.gender !== "undefined" ? { gender: c.gender ?? null } : {}),
+        ...(typeof c.birthday !== "undefined" ? { birthday: c.birthday ?? null } : {}),
+      };
+    })
+    .filter((c) => {
+      if (c.name_revealed) return typeof c.name === "string" && c.name.trim().length >= 2;
+      return typeof c.descriptor === "string" && c.descriptor.trim().length > 0;
+    })
+    .slice(0, 10);
+
+  const locations = dedupeBy(parsed.locations, (l) => l.name)
+    .map((l) => ({ name: l.name.trim(), situation: l.situation.trim() }))
+    .slice(0, 10);
+
+  const plot_seeds = dedupeBy(parsed.plot_seeds, (p) => p.title)
+    .map((p) => ({
+      title: p.title.trim(),
+      detail: p.detail.trim(),
+      ...(p.character_ids
+        ? {
+            character_ids: Array.from(
+              new Set(p.character_ids.map((id) => id.trim()).filter(isUuid))
+            ).slice(0, 10),
+          }
+        : {}),
+      ...(p.character_names
+        ? {
+            character_names: Array.from(
+              new Set(p.character_names.map((n) => n.trim()).filter(Boolean))
+            ).slice(0, 10),
+          }
+        : {}),
+      ...(p.location_names
+        ? {
+            location_names: Array.from(
+              new Set(p.location_names.map((n) => n.trim()).filter(Boolean))
+            ).slice(0, 10),
+          }
+        : {}),
+    }))
+    .slice(0, 5);
+
+  return { characters, locations, plot_seeds };
 }
 
 function extractFirstJsonObject(text: string): unknown {
@@ -327,7 +616,7 @@ async function sendGeminiWithRetry<T>(params: {
       const retryDelayMs = getGeminiRetryDelayMs(err);
       const delayMs = retryDelayMs ?? baseDelayMs * 2 ** (attempt - 1) + jitter;
 
-      await Bun.sleep(Math.min(65_000, delayMs));
+      await Bun.sleep(Math.min(120_000, delayMs));
     }
   }
 
@@ -653,7 +942,12 @@ export async function extractEpisodeFacts(params: {
     "---",
   ].join("\n");
 
-  const response = await chat.sendMessage({ message: prompt });
+  const response = await sendGeminiWithRetry({
+    maxAttempts: 5,
+    send: async () => {
+      return await chat.sendMessage({ message: prompt });
+    },
+  });
   const text = response.text;
   if (typeof text !== "string" || text.trim().length === 0)
     throw new AgentError({
@@ -667,6 +961,111 @@ export async function extractEpisodeFacts(params: {
   const json = extractFirstJsonObject(text);
   const parsed = parseExtractFactsResult(json);
   return parsed.facts;
+}
+
+export async function extractEpisodeEntities(params: {
+  ai: GoogleGenAI;
+  model: string;
+  storyBible?: string;
+  prefetchedContext?: string;
+  episodeContent: string;
+}): Promise<ExtractEntitiesResult> {
+  const systemInstruction = extractEntitiesPrompt.trim();
+
+  const chat = params.ai.chats.create({
+    model: params.model,
+    config: {
+      systemInstruction,
+      temperature: 0,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          characters: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                id: { type: Type.STRING },
+                name: { type: Type.STRING },
+                name_revealed: { type: Type.BOOLEAN },
+                descriptor: { type: Type.STRING },
+                first_appearance_excerpt: { type: Type.STRING },
+                name_evidence_excerpt: { type: Type.STRING },
+                personality: { type: Type.STRING },
+                gender: { type: Type.STRING },
+                birthday: { type: Type.STRING },
+              },
+              required: ["personality"],
+            },
+          },
+          locations: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                name: { type: Type.STRING },
+                situation: { type: Type.STRING },
+              },
+              required: ["name", "situation"],
+            },
+          },
+          plot_seeds: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                detail: { type: Type.STRING },
+                character_ids: { type: Type.ARRAY, items: { type: Type.STRING } },
+                character_names: { type: Type.ARRAY, items: { type: Type.STRING } },
+                location_names: { type: Type.ARRAY, items: { type: Type.STRING } },
+              },
+              required: ["title", "detail"],
+            },
+          },
+        },
+        required: ["characters", "locations", "plot_seeds"],
+        propertyOrdering: ["characters", "locations", "plot_seeds"],
+      },
+      tools: [],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.NONE,
+        },
+      },
+    },
+  });
+
+  const storyBible = (params.storyBible ?? "").trim();
+  const prefetched = (params.prefetchedContext ?? "").trim();
+  const prompt = [
+    storyBible ? "[story_bible]\n---\n" + storyBible.slice(0, 3000) + "\n---" : "[story_bible]\n(없음)",
+    prefetched ? "\n[현재 DB 스냅샷]\n---\n" + prefetched.slice(0, 3000) + "\n---" : "\n[현재 DB 스냅샷]\n(없음)",
+    "\n[새 에피소드 본문]",
+    "---",
+    params.episodeContent,
+    "---",
+  ].join("\n");
+
+  const response = await sendGeminiWithRetry({
+    maxAttempts: 5,
+    send: async () => {
+      return await chat.sendMessage({ message: prompt });
+    },
+  });
+  const text = response.text;
+  if (typeof text !== "string" || text.trim().length === 0)
+    throw new AgentError({
+      type: "UPSTREAM_API_ERROR",
+      code: "UNAVAILABLE",
+      message: "Gemini returned empty text",
+      retryable: true,
+      details: { op: "extractEpisodeEntities" },
+    });
+
+  const json = extractFirstJsonObject(text);
+  return parseExtractEntitiesResult(json);
 }
 
 export async function extractStoryTimeFromEpisode(params: {
@@ -982,8 +1381,11 @@ export async function reviewEpisodeContinuity(params: {
     "---",
   ].join("\n");
 
-  const response = await chat.sendMessage({
-    message: prompt,
+  const response = await sendGeminiWithRetry({
+    maxAttempts: 5,
+    send: async () => {
+      return await chat.sendMessage({ message: prompt });
+    },
   });
 
   const text = response.text;
@@ -1122,7 +1524,12 @@ export async function reviewEpisodeConsistency(params: {
     "---",
   ].join("\n");
 
-  const response = await chat.sendMessage({ message: prompt });
+  const response = await sendGeminiWithRetry({
+    maxAttempts: 5,
+    send: async () => {
+      return await chat.sendMessage({ message: prompt });
+    },
+  });
   const text = response.text;
   if (typeof text !== "string" || text.trim().length === 0)
     throw new AgentError({
@@ -1147,4 +1554,10 @@ export async function reviewEpisodeConsistency(params: {
   };
 }
 
-export type { GenerateResult, ReviewResult, ExtractFactsResult, EpisodeDraft };
+export type {
+  GenerateResult,
+  ReviewResult,
+  ExtractFactsResult,
+  ExtractEntitiesResult,
+  EpisodeDraft,
+};

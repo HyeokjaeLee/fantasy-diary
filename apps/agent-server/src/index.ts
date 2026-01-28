@@ -8,15 +8,19 @@ import {
   getPreviousEpisodeForPrompt,
   indexEpisodeFacts,
   indexEpisodeSummary,
+  insertPlotSeed,
   insertEpisode,
   markPlotSeedsIntroduced,
   ragSearchChunks,
   ragSearchSummaries,
   resolvePlotSeeds,
+  upsertCharacter,
+  upsertLocation,
 } from "./db/index";
 import { AgentError } from "./errors/agentError";
 import {
   extractEpisodeFacts,
+  extractEpisodeEntities,
   generateEpisodeWithTools,
   reviewEpisodeConsistency,
   reviewEpisodeContinuity,
@@ -262,21 +266,109 @@ async function main(): Promise<void> {
       return text.replace(/\s+/g, " ").trim();
     };
 
+    const startsWithAtmosphere = (text: string): boolean => {
+      const start = text.trimStart().slice(0, 40);
+      // Keep this list generic (works across novels) and only for *opening* detection.
+      return /^(어둠|침묵|정적|바람|추위|밤|새벽|눈|비)(이|가|은|는)?\b/.test(start);
+    };
+
+    const hasExplicitClockTime = (text: string): boolean => {
+      // Ban explicit clock time mentions in content (story_time is persisted separately).
+      // - 오후 6시 / 오후 6시 17분
+      // - 6시 17분
+      // - 18:30
+      return (
+        /(오전|오후)\s*\d{1,2}\s*시(\s*\d{1,2}\s*분)?/.test(text) ||
+        /\b\d{1,2}\s*시\s*\d{1,2}\s*분\b/.test(text) ||
+        /\b\d{1,2}:\d{2}\b/.test(text)
+      );
+    };
+
+    // Heuristic: strip common Korean postpositions from the end of a token.
+    // This helps us pick more specific continuity anchor keywords (e.g., "뒷문으로" -> "뒷문").
+    const stripKoreanParticleSuffix = (raw: string): string => {
+      let t = raw.trim().replaceAll(" ", "");
+      if (!t) return t;
+
+      const suffixes = [
+        // 2-3 char particles
+        "으로",
+        "에서",
+        "에게",
+        "까지",
+        "부터",
+        "처럼",
+        "보다",
+        // 1 char particles
+        "을",
+        "를",
+        "은",
+        "는",
+        "이",
+        "가",
+        "에",
+        "의",
+        "와",
+        "과",
+        "도",
+        "만",
+        "로",
+      ];
+
+      // Strip repeatedly in case of stacked suffixes.
+      for (let i = 0; i < 3; i++) {
+        const next = suffixes.find((s) => t.length > s.length && t.endsWith(s));
+        if (!next) break;
+        t = t.slice(0, -next.length);
+      }
+
+      return t;
+    };
+
     const continuityAnchor =
       previousEpisode && typeof previousEpisode.content_tail === "string"
         ? (() => {
             const tail = normalizeForMatch(previousEpisode.content_tail);
 
-            // Prefer the last 2 meaningful sentences (avoid anchors that are only timestamps).
-            const sentences = (tail.match(/[^.!?…]+[.!?…]+/g) ?? [])
-              .map((s) => s.trim())
-              .filter(Boolean);
+            // Extract a few trailing "anchor tokens" from the previous tail.
+            // We avoid verbatim sentence anchoring because it is fragile (quotes, odd unicode, etc.).
+            const stopwords = new Set(
+              [
+                // pronouns / determiners
+                "나",
+                "저",
+                "우리",
+                "너",
+                "당신",
+                "그",
+                "그녀",
+                "그들",
+                "이것",
+                "저것",
+                // very common nouns
+                "사람",
+                "시간",
+                "때",
+                "순간",
+                "상황",
+                "생각",
+              ].map((v) => v.replaceAll(" ", "")),
+            );
 
-            const lastTwo = sentences.length >= 2 ? sentences.slice(-2).join(" ") : "";
-            const fallback = tail.slice(-220).trim();
-            const selected = normalizeForMatch((lastTwo || fallback).slice(-220));
+            const tokens = (tail.match(/[가-힣A-Za-z0-9]{2,}/g) ?? [])
+              .map((t) => stripKoreanParticleSuffix(t))
+              .map((t) => t.trim())
+              .filter((t) => t.length >= 2)
+              .filter((t) => !stopwords.has(t));
 
-            return selected.length >= 30 ? { needle: selected, display: selected } : null;
+            // Prefer more specific tokens from the tail.
+            const anchorTokens = Array.from(new Set(tokens.slice(-20)))
+              .filter((t) => /^[가-힣A-Za-z0-9]{2,}$/.test(t))
+              .slice(-4);
+
+            return anchorTokens.length > 0
+              ? { tokens: anchorTokens, display: anchorTokens.join(", ") }
+              : null;
           })()
         : null;
 
@@ -284,6 +376,8 @@ async function main(): Promise<void> {
       `분량(하드 제한): ${lengthRange.min}~${lengthRange.max}자`,
       "연속성(하드 제한): 첫 2문단은 직전 장면 발췌의 즉시 결과로만 구성 (프롤로그/세계관 소개/상황 정리/장소 점프/시간 점프 금지)",
       "금지: 새 인물/새 고유명사(조직/지명 포함)/새 설정을 갑자기 도입하지 마라. 필요하면 '그 남자/그 여자/그 목소리'처럼 익명 처리.",
+      "오프닝(하드 제한): 첫 문장은 배경/날씨/분위기(어둠/추위/바람/정적 등)로 시작하지 말고, 반드시 인물의 행동/선택/대사로 시작.",
+      "시간 표현(하드 제한): 본문에 숫자 시각 표기 금지(예: '오전/오후 N시', 'N시 N분', 'HH:MM'). story_time은 DB에 저장되므로 상대 표현(잠시 후/몇 분 뒤/해가 기울 무렵)을 우선 사용.",
     ].join("\n");
 
     const novelTitle =
@@ -296,7 +390,9 @@ async function main(): Promise<void> {
           const [charactersRes, locationsRes, plotSeedsRes] = await Promise.all([
             supabase
               .from("characters")
-              .select("name,gender,birthday,personality")
+              .select(
+                "id,name,name_revealed,descriptor,first_appearance_excerpt,personality,gender,birthday",
+              )
               .eq("novel_id", targetNovelId)
               .limit(30),
             supabase
@@ -431,18 +527,58 @@ async function main(): Promise<void> {
 
         const content = generated.episode_content;
 
-        // Hard continuity enforcement: require verbatim carry-over of the last sentence.
+        // Hard continuity enforcement: require some anchor keywords from the previous tail.
         if (continuityAnchor) {
           const start = normalizeForMatch(content.slice(0, 800));
-          if (!start.includes(continuityAnchor.needle)) {
+          const present = continuityAnchor.tokens.filter((t) => start.includes(t));
+          const requiredCount = Math.min(2, continuityAnchor.tokens.length);
+
+          if (present.length < Math.max(1, requiredCount)) {
             const instruction = [
               "연속성 하드 제한 위반: 새 회차 초반이 직전 장면 발췌와 단절됐다.",
-              "첫 2문단 안에 아래 문장을 **그대로** 포함하고(문장 그대로), 그 즉시 반응/결과를 이어서 서술하라.",
-              "[직전 장면 마지막 문장(그대로 포함)]",
-              "---",
-              continuityAnchor.display,
-              "---",
-              "추가 규칙: 해당 문장을 포함한 뒤, 장소/시간 점프 없이 같은 장면을 이어서 쓴다.",
+              "첫 2문단 안에서 직전 장면의 상황/행동/대사를 **직접 이어서** 서술하라.",
+              `아래 키워드 중 최소 ${Math.max(1, requiredCount)}개를 첫 2문단에 **그대로** 포함하라: ${
+                continuityAnchor.display
+              }`,
+              "추가 규칙: 장소/시간 점프 없이 같은 장면을 이어서 쓴다.",
+            ].join("\n");
+
+            if (writerAttempt === maxWriterAttempts) {
+              hadFailures = true;
+              reviewFailed = true;
+              results.push({
+                novel_id: targetNovelId,
+                episode_no: episodeNo,
+                status: "review_failed",
+                issues: [{ severity: "high", description: instruction }],
+              });
+              break;
+            }
+
+            writerRevisionInstruction = instruction;
+            continue;
+          }
+        }
+
+        // Avoid cliché "atmosphere-first" openings and explicit clock times.
+        // If violated, request a rewrite while keeping continuity.
+        {
+          const trimmed = content.trimStart();
+          const hasBadOpening = startsWithAtmosphere(trimmed);
+          const hasBadTime = hasExplicitClockTime(content);
+
+          if (hasBadOpening || hasBadTime) {
+            const reasons: string[] = [];
+            if (hasBadOpening) reasons.push("배경/분위기(어둠/추위 등)로 시작하는 오프닝");
+            if (hasBadTime) reasons.push("숫자 시각(오전/오후 N시, N시 N분, HH:MM) 직접 언급");
+
+            const instruction = [
+              `오프닝/시간 규칙 위반: ${reasons.join(", ")}.`,
+              "수정 지시:",
+              "- 첫 문장은 반드시 인물의 행동/선택/대사로 시작하라. (배경/날씨/분위기 묘사로 시작 금지)",
+              "- 본문에서 숫자 시각 표기(오전/오후 N시, N시 N분, HH:MM)를 모두 제거하고, 상대 표현(잠시 후/몇 분 뒤/해가 기울 무렵)으로 바꿔라.",
+              "- 연속성 유지: 직전 장면 발췌의 즉시 결과에서 끊기지 않게 이어서 쓴다.",
+              "- 새 설정/새 고유명사 추가 금지.",
             ].join("\n");
 
             if (writerAttempt === maxWriterAttempts) {
@@ -820,6 +956,170 @@ async function main(): Promise<void> {
       novelId: targetNovelId,
       episodeNo,
       episodeId: episode.id,
+    });
+
+    // Extract structured context and persist it for future episodes.
+    // This makes characters/locations/plot_seeds usable as canonical context.
+    const extractedEntities = await extractEpisodeEntities({
+      ai,
+      model: geminiModel,
+      storyBible,
+      prefetchedContext: writerPrefetchedContext,
+      episodeContent: generated.episode_content,
+    });
+
+    // 모델이 캐릭터를 비워버리는 경우(특히 1인칭/이름 미공개 초반부)가 잦아서,
+    // 최소 1개의 "이름 미공개 주인공" 캐릭터는 항상 남기도록 방어한다.
+    const entities = (() => {
+      if (extractedEntities.characters.length > 0) return extractedEntities;
+
+      const content = generated.episode_content;
+      const hasFirstPerson =
+        content.includes("나는") || content.includes("내가") || content.includes("나 ");
+
+      const descriptor = hasFirstPerson ? "화자(1인칭)" : "주인공(이름 미공개)";
+      const excerpt = content.trim().slice(0, 240);
+
+      return {
+        ...extractedEntities,
+        characters: [
+          {
+            name: null,
+            name_revealed: false,
+            descriptor,
+            ...(excerpt ? { first_appearance_excerpt: excerpt } : {}),
+            personality: "생존을 위해 상황을 관찰하며 조심스럽게 행동한다.",
+          },
+        ],
+      };
+    })();
+
+    const characterIds = new Set<string>();
+    const characterNames = new Set<string>();
+    let protagonistCharacterId: string | null = null;
+
+    const looksLikeProtagonist = (descriptor: string | null): boolean => {
+      const d = (descriptor ?? "").trim();
+      if (!d) return false;
+      return d.includes("화자") || d.includes("주인공") || d.includes("1인칭");
+    };
+
+    for (const c of entities.characters) {
+      const name = typeof c.name === "string" ? c.name.trim() : null;
+      const nameRevealed = Boolean(c.name_revealed && name);
+      const descriptor = typeof c.descriptor === "string" ? c.descriptor.trim() : null;
+      const firstExcerpt =
+        typeof c.first_appearance_excerpt === "string" ? c.first_appearance_excerpt.trim() : null;
+      const nameEvidence =
+        typeof c.name_evidence_excerpt === "string" ? c.name_evidence_excerpt.trim() : null;
+
+      const saved = await upsertCharacter({
+        supabase,
+        args: {
+          novel_id: targetNovelId,
+          ...(typeof c.id === "string" && c.id.trim() ? { id: c.id.trim() } : {}),
+          name: nameRevealed ? name : null,
+          name_revealed: nameRevealed,
+          ...(descriptor ? { descriptor } : {}),
+          ...(firstExcerpt ? { first_appearance_excerpt: firstExcerpt } : {}),
+          ...(nameEvidence ? { name_evidence_excerpt: nameEvidence } : {}),
+          ...(nameRevealed ? { name_revealed_in_episode_id: episode.id } : {}),
+          ...(firstExcerpt ? { first_appearance_episode_id: episode.id } : {}),
+          personality: c.personality,
+          ...(typeof c.gender !== "undefined" ? { gender: c.gender } : {}),
+          ...(typeof c.birthday !== "undefined" ? { birthday: c.birthday } : {}),
+        },
+      });
+
+      characterIds.add(saved.id);
+      if (typeof saved.name === "string" && saved.name.trim()) characterNames.add(saved.name.trim());
+
+      if (!protagonistCharacterId && !saved.name && looksLikeProtagonist(descriptor)) {
+        protagonistCharacterId = saved.id;
+      }
+    }
+
+    const locationNames = new Set<string>();
+    for (const l of entities.locations) {
+      const name = l.name.trim();
+      if (!name) continue;
+      await upsertLocation({
+        supabase,
+        args: {
+          novel_id: targetNovelId,
+          name,
+          situation: l.situation,
+        },
+      });
+      locationNames.add(name);
+    }
+
+    for (const p of entities.plot_seeds) {
+      const rawPlotCharacterNames = (p.character_names ?? [])
+        .map((n) => n.trim())
+        .filter((n) => n.length > 0);
+
+      const character_ids = (p.character_ids ?? [])
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0 && characterIds.has(id));
+
+      // plot_seeds 쪽에서 '나/저/우리/주인공/화자' 등을 캐릭터명으로 주는 경우,
+      // 해당 에피소드에서 생성된 주인공(이름 미공개) 캐릭터로 연결한다.
+      if (protagonistCharacterId) {
+        const compactSet = new Set(
+          rawPlotCharacterNames.map((n) => n.replaceAll(" ", ""))
+        );
+        const hasProtagonistAlias =
+          compactSet.has("나") ||
+          compactSet.has("저") ||
+          compactSet.has("우리") ||
+          compactSet.has("주인공") ||
+          compactSet.has("화자");
+        if (hasProtagonistAlias) character_ids.push(protagonistCharacterId);
+
+        const mentionsProtagonistInDetail =
+          typeof p.detail === "string" &&
+          (p.detail.includes("주인공") || p.detail.includes("화자") || p.detail.includes("1인칭"));
+
+        // 캐릭터 연결 정보가 비어있지만, 설명상 주인공 중심 떡밥이면 주인공으로 연결한다.
+        if (
+          mentionsProtagonistInDetail &&
+          rawPlotCharacterNames.length === 0 &&
+          (p.character_ids ?? []).length === 0
+        ) {
+          character_ids.push(protagonistCharacterId);
+        }
+      }
+
+      const character_ids_deduped = Array.from(new Set(character_ids));
+
+      const character_names = rawPlotCharacterNames.filter(
+        (n) => n.length > 0 && characterNames.has(n)
+      );
+      const location_names = (p.location_names ?? [])
+        .map((n) => n.trim())
+        .filter((n) => n.length > 0 && locationNames.has(n));
+
+      await insertPlotSeed({
+        supabase,
+        args: {
+          novel_id: targetNovelId,
+          title: p.title,
+          detail: p.detail,
+          introduced_in_episode_id: episode.id,
+          ...(character_ids_deduped.length > 0 ? { character_ids: character_ids_deduped } : {}),
+          ...(character_names.length > 0 ? { character_names } : {}),
+          ...(location_names.length > 0 ? { location_names } : {}),
+        },
+      });
+    }
+
+    logger.debug("episode.context.upserted", {
+      novelId: targetNovelId,
+      episodeNo,
+      characters: characterIds.size,
+      locations: locationNames.size,
+      plotSeeds: entities.plot_seeds.length,
     });
 
     await markPlotSeedsIntroduced({

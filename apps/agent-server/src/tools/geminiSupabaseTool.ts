@@ -131,12 +131,32 @@ export function createGeminiSupabaseCallableTool(params: {
       {
         name: "upsert_character",
         description:
-          "Create or update a character for this novel. Matches by (novel_id, name).",
+          "Create or update a character for this novel. Use name when revealed; otherwise store descriptor and keep name_revealed=false.",
         parameters: {
           type: Type.OBJECT,
           properties: {
             novel_id: { type: Type.STRING },
-            name: { type: Type.STRING },
+            id: {
+              type: Type.STRING,
+              description: "Optional characters.id for updating existing character.",
+            },
+            name: { type: Type.STRING, description: "Character proper name if revealed." },
+            name_revealed: {
+              type: Type.BOOLEAN,
+              description: "Whether the character's proper name is revealed in the story.",
+            },
+            descriptor: {
+              type: Type.STRING,
+              description: "Descriptor for unrevealed character (e.g., '검은 코트를 입은 남자').",
+            },
+            first_appearance_excerpt: {
+              type: Type.STRING,
+              description: "Optional short excerpt describing first appearance context.",
+            },
+            name_evidence_excerpt: {
+              type: Type.STRING,
+              description: "Optional excerpt where the name is revealed.",
+            },
             personality: {
               type: Type.STRING,
               description: "Character personality/traits summary.",
@@ -151,7 +171,7 @@ export function createGeminiSupabaseCallableTool(params: {
               description: "YYYY-MM-DD",
             },
           },
-          required: ["novel_id", "name", "personality", "gender", "birthday"],
+          required: ["novel_id", "personality"],
         },
       },
       {

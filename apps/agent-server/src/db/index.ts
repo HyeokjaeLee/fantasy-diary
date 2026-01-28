@@ -1,7 +1,7 @@
 import type { createSupabaseAdminClient } from "@fantasy-diary/shared/supabase";
 import type { Database, TablesInsert } from "@fantasy-diary/shared/supabase/type";
 import { SupabaseZod } from "@fantasy-diary/shared/supabase/zod";
-import { ZodError } from "zod";
+import { ZodError, z } from "zod";
 
 import { AgentError } from "../errors/agentError";
 import { geminiEmbedText, vectorLiteral } from "../gemini";
@@ -48,16 +48,36 @@ type RagSearchChunksArgs = {
 
 type UpsertCharacterArgs = Pick<
   TablesInsert<"characters">,
-  "novel_id" | "name" | "personality" | "gender" | "birthday"
+  | "id"
+  | "novel_id"
+  | "name"
+  | "name_revealed"
+  | "descriptor"
+  | "first_appearance_episode_id"
+  | "first_appearance_excerpt"
+  | "name_revealed_in_episode_id"
+  | "name_evidence_excerpt"
+  | "personality"
+  | "gender"
+  | "birthday"
 >;
 
-const UpsertCharacterArgsSchema = SupabaseZod.public.Tables.characters.Insert.pick({
-  novel_id: true,
-  name: true,
-  personality: true,
-  gender: true,
-  birthday: true,
-}).strict();
+const UpsertCharacterArgsSchema = z
+  .object({
+    id: z.string().uuid().optional(),
+    novel_id: z.string().uuid(),
+    name: z.string().nullable().optional(),
+    name_revealed: z.boolean().optional(),
+    descriptor: z.string().nullable().optional(),
+    first_appearance_episode_id: z.string().uuid().nullable().optional(),
+    first_appearance_excerpt: z.string().nullable().optional(),
+    name_revealed_in_episode_id: z.string().uuid().nullable().optional(),
+    name_evidence_excerpt: z.string().nullable().optional(),
+    personality: z.string(),
+    gender: SupabaseZod.public.Enums.gender.nullable().optional(),
+    birthday: z.string().nullable().optional(),
+  })
+  .strict();
 
 type UpsertLocationArgs = Pick<
   TablesInsert<"locations">,
@@ -74,6 +94,7 @@ type InsertPlotSeedArgs = Pick<
   TablesInsert<"plot_seeds">,
   "novel_id" | "title" | "detail" | "introduced_in_episode_id"
 > & {
+  character_ids?: string[];
   character_names?: string[];
   location_names?: string[];
 };
@@ -377,14 +398,17 @@ export async function ragSearchChunks(params: {
 export async function upsertCharacter(params: {
   supabase: ReturnType<typeof createSupabaseAdminClient>;
   args: UpsertCharacterArgs;
-}): Promise<{ id: string; name: string }> {
+}): Promise<{ id: string; name: string | null }> {
   let parsed: UpsertCharacterArgs;
 
   try {
     parsed = UpsertCharacterArgsSchema.parse({
       ...params.args,
       novel_id: params.args.novel_id.trim(),
-      birthday: params.args.birthday.trim(),
+      birthday:
+        typeof params.args.birthday === "string"
+          ? params.args.birthday.trim() || null
+          : params.args.birthday,
     });
   } catch (err) {
     const issues = err instanceof ZodError ? err.issues.map((i) => i.message) : undefined;
@@ -399,49 +423,131 @@ export async function upsertCharacter(params: {
   }
 
   const novelId = parsed.novel_id;
-  const name = parsed.name.trim();
 
-  if (!name)
-    throw new AgentError({
-      type: "VALIDATION_ERROR",
-      code: "REQUIRED",
-      message: "upsert_character: name is required",
-      details: { tool: "upsert_character", field: "name" },
-    });
+  const rawName = typeof parsed.name === "string" ? parsed.name.trim() : null;
+  const name = rawName && rawName.length > 0 ? rawName : null;
+  const rawDescriptor = typeof parsed.descriptor === "string" ? parsed.descriptor.trim() : null;
+  const descriptor = rawDescriptor && rawDescriptor.length > 0 ? rawDescriptor : null;
+  const nameRevealed = Boolean(
+    typeof parsed.name_revealed === "boolean" ? parsed.name_revealed && Boolean(name) : Boolean(name)
+  );
 
   const personality = toRequiredString(
     parsed.personality,
     "upsert_character: personality"
   );
   const gender = parsed.gender;
-  const birthday = toRequiredString(parsed.birthday, "upsert_character: birthday");
+  const birthday = parsed.birthday;
 
-  const { data: existing, error: existingError } = await params.supabase
-    .from("characters")
-    .select("id,name")
-    .eq("novel_id", novelId)
-    .eq("name", name)
-    .limit(1);
+  const firstAppearanceEpisodeId =
+    typeof parsed.first_appearance_episode_id === "string" && parsed.first_appearance_episode_id.trim()
+      ? parsed.first_appearance_episode_id.trim()
+      : null;
+  const firstAppearanceExcerpt =
+    typeof parsed.first_appearance_excerpt === "string" && parsed.first_appearance_excerpt.trim()
+      ? parsed.first_appearance_excerpt.trim()
+      : null;
+  const nameRevealedInEpisodeId =
+    typeof parsed.name_revealed_in_episode_id === "string" && parsed.name_revealed_in_episode_id.trim()
+      ? parsed.name_revealed_in_episode_id.trim()
+      : null;
+  const nameEvidenceExcerpt =
+    typeof parsed.name_evidence_excerpt === "string" && parsed.name_evidence_excerpt.trim()
+      ? parsed.name_evidence_excerpt.trim()
+      : null;
 
-  if (existingError)
+  if (!name && !descriptor)
     throw new AgentError({
-      type: "CALLING_TOOL_ERROR",
-      code: "DB_ERROR",
-      message: `upsert_character: ${existingError.message}`,
-      details: { tool: "upsert_character", op: "select_existing" },
+      type: "VALIDATION_ERROR",
+      code: "REQUIRED",
+      message: "upsert_character: either name or descriptor is required",
+      details: { tool: "upsert_character", fields: ["name", "descriptor"] },
     });
 
-  const current = existing?.[0];
+  const requestedId = typeof parsed.id === "string" && parsed.id.trim() ? parsed.id.trim() : null;
+
+  const loadById = async (id: string): Promise<{ id: string; name: string | null } | null> => {
+    const { data, error } = await params.supabase
+      .from("characters")
+      .select("id,name")
+      .eq("id", id)
+      .eq("novel_id", novelId)
+      .maybeSingle();
+    if (error)
+      throw new AgentError({
+        type: "CALLING_TOOL_ERROR",
+        code: "DB_ERROR",
+        message: `upsert_character: ${error.message}`,
+        details: { tool: "upsert_character", op: "select_by_id" },
+      });
+    return data ?? null;
+  };
+
+  const loadByName = async (name: string): Promise<{ id: string; name: string | null } | null> => {
+    const { data, error } = await params.supabase
+      .from("characters")
+      .select("id,name")
+      .eq("novel_id", novelId)
+      .eq("name", name)
+      .limit(1);
+    if (error)
+      throw new AgentError({
+        type: "CALLING_TOOL_ERROR",
+        code: "DB_ERROR",
+        message: `upsert_character: ${error.message}`,
+        details: { tool: "upsert_character", op: "select_existing_by_name" },
+      });
+    return data?.[0] ?? null;
+  };
+
+  const loadByDescriptor = async (
+    descriptor: string
+  ): Promise<{ id: string; name: string | null } | null> => {
+    const { data, error } = await params.supabase
+      .from("characters")
+      .select("id,name")
+      .eq("novel_id", novelId)
+      .is("name", null)
+      .eq("name_revealed", false)
+      .eq("descriptor", descriptor)
+      .limit(1);
+    if (error)
+      throw new AgentError({
+        type: "CALLING_TOOL_ERROR",
+        code: "DB_ERROR",
+        message: `upsert_character: ${error.message}`,
+        details: { tool: "upsert_character", op: "select_existing_by_descriptor" },
+      });
+    return data?.[0] ?? null;
+  };
+
+  const current = requestedId
+    ? await loadById(requestedId)
+    : name
+      ? await loadByName(name)
+      : descriptor
+        ? await loadByDescriptor(descriptor)
+        : null;
 
   if (!current) {
     const { data, error } = await params.supabase
       .from("characters")
       .insert({
         novel_id: novelId,
-        name,
+        name: nameRevealed ? name : null,
+        name_revealed: nameRevealed,
+        ...(descriptor ? { descriptor } : {}),
+        ...(firstAppearanceEpisodeId ? { first_appearance_episode_id: firstAppearanceEpisodeId } : {}),
+        ...(firstAppearanceExcerpt ? { first_appearance_excerpt: firstAppearanceExcerpt } : {}),
+        ...(nameRevealedInEpisodeId && nameRevealed
+          ? { name_revealed_in_episode_id: nameRevealedInEpisodeId }
+          : {}),
+        ...(nameEvidenceExcerpt && nameRevealed
+          ? { name_evidence_excerpt: nameEvidenceExcerpt }
+          : {}),
         personality,
-        gender,
-        birthday,
+        ...(typeof gender !== "undefined" ? { gender } : {}),
+        ...(typeof birthday !== "undefined" ? { birthday } : {}),
       })
       .select("id,name")
       .single();
@@ -464,9 +570,20 @@ export async function upsertCharacter(params: {
     return data;
   }
 
+  const patch: Record<string, unknown> = { personality };
+  if (typeof gender !== "undefined") patch.gender = gender;
+  if (typeof birthday !== "undefined") patch.birthday = birthday;
+  if (descriptor) patch.descriptor = descriptor;
+  if (nameRevealed && name) {
+    patch.name = name;
+    patch.name_revealed = true;
+    if (nameRevealedInEpisodeId) patch.name_revealed_in_episode_id = nameRevealedInEpisodeId;
+    if (nameEvidenceExcerpt) patch.name_evidence_excerpt = nameEvidenceExcerpt;
+  }
+
   const { data, error } = await params.supabase
     .from("characters")
-    .update({ personality, gender, birthday })
+    .update(patch)
     .eq("id", current.id)
     .select("id,name")
     .single();
@@ -728,6 +845,9 @@ export async function insertPlotSeed(params: {
     data = { id: current.id, title: current.title, status: current.status };
   }
 
+  const characterIds = Array.from(
+    new Set((params.args.character_ids ?? []).map((id) => id.trim()).filter(Boolean))
+  );
   const characterNames = Array.from(
     new Set((params.args.character_names ?? []).map((n) => n.trim()).filter(Boolean))
   );
@@ -735,7 +855,24 @@ export async function insertPlotSeed(params: {
     new Set((params.args.location_names ?? []).map((n) => n.trim()).filter(Boolean))
   );
 
-  if (characterNames.length > 0) {
+  if (characterIds.length > 0) {
+    const rows = characterIds.map((id) => ({
+      plot_seed_id: data.id,
+      character_id: id,
+    }));
+
+    const { error: linkError } = await params.supabase
+      .from("plot_seed_characters")
+      .upsert(rows, { onConflict: "plot_seed_id,character_id" });
+
+    if (linkError)
+      throw new AgentError({
+        type: "CALLING_TOOL_ERROR",
+        code: "DB_ERROR",
+        message: `insert_plot_seed: link characters: ${linkError.message}`,
+        details: { tool: "insert_plot_seed", op: "link_character_ids" },
+      });
+  } else if (characterNames.length > 0) {
     const { data: characters, error: characterError } = await params.supabase
       .from("characters")
       .select("id,name")

@@ -18,15 +18,21 @@ export type Database = {
       characters: {
         Row: {
           /** @column characters.birthday: 캐릭터 생일(필수): YYYY-MM-DD */
-          birthday: string
+          birthday: string | null
           /** @column characters.created_at: 생성 시각(기본값 now()) */
           created_at: string
+          descriptor: string | null
+          first_appearance_episode_id: string | null
+          first_appearance_excerpt: string | null
           /** @column characters.gender: 캐릭터 성별(필수): male|female */
-          gender: Database["public"]["Enums"]["gender"]
+          gender: Database["public"]["Enums"]["gender"] | null
           /** @column characters.id: 캐릭터 ID (UUID, 기본값 gen_random_uuid()) */
           id: string
           /** @column characters.name: 캐릭터 이름 */
-          name: string
+          name: string | null
+          name_evidence_excerpt: string | null
+          name_revealed: boolean
+          name_revealed_in_episode_id: string | null
           /** @column characters.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id: string
           /** @column characters.personality: 캐릭터 성격(필수) */
@@ -34,15 +40,21 @@ export type Database = {
         }
         Insert: {
           /** @column characters.birthday: 캐릭터 생일(필수): YYYY-MM-DD */
-          birthday: string
+          birthday?: string | null
           /** @column characters.created_at: 생성 시각(기본값 now()) */
           created_at?: string
+          descriptor?: string | null
+          first_appearance_episode_id?: string | null
+          first_appearance_excerpt?: string | null
           /** @column characters.gender: 캐릭터 성별(필수): male|female */
-          gender: Database["public"]["Enums"]["gender"]
+          gender?: Database["public"]["Enums"]["gender"] | null
           /** @column characters.id: 캐릭터 ID (UUID, 기본값 gen_random_uuid()) */
           id?: string
           /** @column characters.name: 캐릭터 이름 */
-          name: string
+          name?: string | null
+          name_evidence_excerpt?: string | null
+          name_revealed?: boolean
+          name_revealed_in_episode_id?: string | null
           /** @column characters.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id: string
           /** @column characters.personality: 캐릭터 성격(필수) */
@@ -50,21 +62,41 @@ export type Database = {
         }
         Update: {
           /** @column characters.birthday: 캐릭터 생일(필수): YYYY-MM-DD */
-          birthday?: string
+          birthday?: string | null
           /** @column characters.created_at: 생성 시각(기본값 now()) */
           created_at?: string
+          descriptor?: string | null
+          first_appearance_episode_id?: string | null
+          first_appearance_excerpt?: string | null
           /** @column characters.gender: 캐릭터 성별(필수): male|female */
-          gender?: Database["public"]["Enums"]["gender"]
+          gender?: Database["public"]["Enums"]["gender"] | null
           /** @column characters.id: 캐릭터 ID (UUID, 기본값 gen_random_uuid()) */
           id?: string
           /** @column characters.name: 캐릭터 이름 */
-          name?: string
+          name?: string | null
+          name_evidence_excerpt?: string | null
+          name_revealed?: boolean
+          name_revealed_in_episode_id?: string | null
           /** @column characters.novel_id: 소속 소설 ID (public.novels.id) */
           novel_id?: string
           /** @column characters.personality: 캐릭터 성격(필수) */
           personality?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "characters_first_appearance_episode_id_fkey"
+            columns: ["first_appearance_episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "characters_name_revealed_in_episode_id_fkey"
+            columns: ["name_revealed_in_episode_id"]
+            isOneToOne: false
+            referencedRelation: "episodes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "characters_novel_id_fkey1"
             columns: ["novel_id"]
