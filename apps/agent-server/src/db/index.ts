@@ -6,6 +6,69 @@ import { ZodError, z } from "zod";
 import { AgentError } from "../errors/agentError";
 import { geminiEmbedText, vectorLiteral } from "../gemini";
 
+// --- Gemini embedding + RAG caches (reduce unnecessary Gemini calls) ---
+
+const EMBEDDING_CACHE_MAX = 500;
+const embeddingCache = new Map<string, number[]>();
+const embeddingInFlight = new Map<string, Promise<number[]>>();
+
+function cacheSetLimited<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
+  if (map.size >= max && !map.has(key)) {
+    // Drop the oldest entry (Map preserves insertion order).
+    const oldest = map.keys().next().value as K | undefined;
+    if (typeof oldest !== "undefined") map.delete(oldest);
+  }
+  map.set(key, value);
+}
+
+function makeEmbeddingCacheKey(params: { model: string; text: string }): string {
+  // NOTE: embedding output depends on model + text.
+  // We intentionally do NOT include apiKey in the cache key.
+  return `${params.model}::${params.text.trim()}`;
+}
+
+async function geminiEmbedTextCached(params: {
+  apiKey: string;
+  model: string;
+  text: string;
+}): Promise<number[]> {
+  const key = makeEmbeddingCacheKey({ model: params.model, text: params.text });
+  const cached = embeddingCache.get(key);
+  if (cached) return cached;
+
+  const inflight = embeddingInFlight.get(key);
+  if (inflight) return await inflight;
+
+  const p = geminiEmbedText(params)
+    .then((values) => {
+      cacheSetLimited(embeddingCache, key, values, EMBEDDING_CACHE_MAX);
+      return values;
+    })
+    .finally(() => {
+      embeddingInFlight.delete(key);
+    });
+
+  embeddingInFlight.set(key, p);
+  return await p;
+}
+
+const RAG_CACHE_MAX = 200;
+const ragResultCache = new Map<string, unknown>();
+
+function makeRagCacheKey(params: {
+  kind: "summaries" | "chunks";
+  ragEmbeddingModelId: string;
+  novelId: string;
+  query: string;
+  maxEpisodeNo: number;
+  matchCount: number;
+  chunkKind?: string;
+}): string {
+  const q = params.query.trim();
+  const base = `${params.kind}::${params.ragEmbeddingModelId}::${params.novelId}::${params.maxEpisodeNo}::${params.matchCount}::${q}`;
+  return params.chunkKind ? `${base}::${params.chunkKind}` : base;
+}
+
 const allowedDbTables = [
   "novels",
   "episodes",
@@ -267,8 +330,21 @@ export async function ragSearchSummaries(params: {
 
   let embedding: number[];
 
+  // Cache full result for identical queries within a process.
+  const matchCount = params.args.match_count ?? 30;
+  const ragCacheKey = makeRagCacheKey({
+    kind: "summaries",
+    ragEmbeddingModelId: params.ragEmbeddingModelId,
+    novelId: params.args.novel_id,
+    query: params.args.query,
+    maxEpisodeNo: params.args.max_episode_no,
+    matchCount,
+  });
+  const cachedResult = ragResultCache.get(ragCacheKey);
+  if (typeof cachedResult !== "undefined") return cachedResult;
+
   try {
-    embedding = await geminiEmbedText({
+    embedding = await geminiEmbedTextCached({
       apiKey: params.geminiApiKey,
       model: params.geminiEmbeddingModel,
       text: params.args.query,
@@ -287,7 +363,7 @@ export async function ragSearchSummaries(params: {
     p_novel_id: params.args.novel_id,
     p_query_embedding: vectorLiteral(embedding),
     p_max_episode_no: params.args.max_episode_no,
-    p_match_count: params.args.match_count ?? 30,
+    p_match_count: matchCount,
     p_embedding_model: params.ragEmbeddingModelId,
   });
 
@@ -299,6 +375,7 @@ export async function ragSearchSummaries(params: {
       details: { tool: "rag_search_summaries" },
     });
 
+  cacheSetLimited(ragResultCache, ragCacheKey, data, RAG_CACHE_MAX);
   return data;
 }
 
@@ -359,8 +436,22 @@ export async function ragSearchChunks(params: {
 
   let embedding: number[];
 
+  // Cache full result for identical queries within a process.
+  const matchCount = params.args.match_count ?? 10;
+  const ragCacheKey = makeRagCacheKey({
+    kind: "chunks",
+    ragEmbeddingModelId: params.ragEmbeddingModelId,
+    novelId: params.args.novel_id,
+    query: params.args.query,
+    maxEpisodeNo: params.args.max_episode_no,
+    matchCount,
+    chunkKind: params.args.chunk_kind,
+  });
+  const cachedResult = ragResultCache.get(ragCacheKey);
+  if (typeof cachedResult !== "undefined") return cachedResult;
+
   try {
-    embedding = await geminiEmbedText({
+    embedding = await geminiEmbedTextCached({
       apiKey: params.geminiApiKey,
       model: params.geminiEmbeddingModel,
       text: params.args.query,
@@ -380,7 +471,7 @@ export async function ragSearchChunks(params: {
     p_query_embedding: vectorLiteral(embedding),
     p_chunk_kind: params.args.chunk_kind,
     p_max_episode_no: params.args.max_episode_no,
-    p_match_count: params.args.match_count ?? 10,
+    p_match_count: matchCount,
     p_embedding_model: params.ragEmbeddingModelId,
   });
 
@@ -392,6 +483,7 @@ export async function ragSearchChunks(params: {
       details: { tool: "rag_search_chunks" },
     });
 
+  cacheSetLimited(ragResultCache, ragCacheKey, data, RAG_CACHE_MAX);
   return data;
 }
 
@@ -1097,7 +1189,7 @@ export async function indexEpisodeSummary(params: {
   let embedding: number[];
 
   try {
-    embedding = await geminiEmbedText({
+    embedding = await geminiEmbedTextCached({
       apiKey: params.geminiApiKey,
       model: params.geminiEmbeddingModel,
       text: embeddingText,
@@ -1164,7 +1256,7 @@ export async function indexEpisodeFacts(params: {
     let embedding: number[];
 
     try {
-      embedding = await geminiEmbedText({
+      embedding = await geminiEmbedTextCached({
         apiKey: params.geminiApiKey,
         model: params.geminiEmbeddingModel,
         text: embeddingText,

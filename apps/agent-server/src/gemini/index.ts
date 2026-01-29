@@ -4,18 +4,22 @@ import { z } from "zod";
 
 import { AgentError } from "../errors/agentError";
 import type { GeminiSupabaseTool } from "../tools";
+import extractEntitiesPrompt from "./prompts/extract_entities.md";
+import extractFactsPrompt from "./prompts/extract_facts.md";
+import extractStoryTimePrompt from "./prompts/extract_story_time.md";
 import repairPromptTemplate from "./prompts/repair.md";
 import retryPrompt from "./prompts/retry.md";
 import systemPrompt from "./prompts/system.md";
 import systemPromptCompact from "./prompts/system_compact.md";
-import extractFactsPrompt from "./prompts/extract_facts.md";
-import extractEntitiesPrompt from "./prompts/extract_entities.md";
-import extractStoryTimePrompt from "./prompts/extract_story_time.md";
 import userPromptTemplate from "./prompts/user.md";
+import userEpisode1PromptTemplate from "./prompts/user_episode1.md";
 
 type GenerateResult = {
   episode_content: string;
   resolved_plot_seed_ids?: string[];
+  // Optional structured entities extracted from the generated episode.
+  // Providing this in the same response reduces extra Gemini calls.
+  entities?: ExtractEntitiesResult;
 };
 
 type EpisodeDraft = GenerateResult & {
@@ -54,8 +58,11 @@ type ExtractEntitiesResult = {
 function normalizeGender(value: string): "male" | "female" | null | undefined {
   const v = value.trim().toLowerCase();
   if (!v) return undefined;
-  if (v === "male" || v === "m" || v === "남" || v === "남성" || v === "남자") return "male";
-  if (v === "female" || v === "f" || v === "여" || v === "여성" || v === "여자") return "female";
+  if (v === "male" || v === "m" || v === "남" || v === "남성" || v === "남자")
+    return "male";
+  if (v === "female" || v === "f" || v === "여" || v === "여성" || v === "여자")
+    return "female";
+
   return undefined;
 }
 
@@ -72,11 +79,15 @@ const GenerateResultSchema = z
         z
           .string()
           .transform((value) => value.trim())
-          .refine((value) => value.length > 0, { message: "plot seed id must be non-empty" })
+          .refine((value) => value.length > 0, {
+            message: "plot seed id must be non-empty",
+          }),
       )
       .optional(),
   })
-  .strict();
+  // NOTE: We intentionally allow extra keys so we can extend the model output
+  // schema (e.g., entities) without breaking older deployments.
+  .passthrough();
 
 const ExtractFactsResultSchema = z
   .object({
@@ -85,7 +96,7 @@ const ExtractFactsResultSchema = z
         z
           .string()
           .transform((v) => v.trim())
-          .refine((v) => v.length > 0, { message: "fact must be non-empty" })
+          .refine((v) => v.length > 0, { message: "fact must be non-empty" }),
       )
       .default([]),
   })
@@ -146,15 +157,18 @@ const ExtractEntitiesResultSchema = z
                     ? (() => {
                         const s = v.trim();
                         if (!s) return null;
+
                         return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
                       })()
                     : v,
-                z.string().nullable()
+                z.string().nullable(),
               )
               .optional(),
           })
           .strict()
-          .refine((v) => v.personality.length > 0, { message: "character personality required" })
+          .refine((v) => v.personality.length > 0, {
+            message: "character personality required",
+          }),
       )
       .default([]),
     locations: z
@@ -165,8 +179,12 @@ const ExtractEntitiesResultSchema = z
             situation: z.string().transform((v) => v.trim()),
           })
           .strict()
-          .refine((v) => v.name.length > 0, { message: "location name required" })
-          .refine((v) => v.situation.length > 0, { message: "location situation required" })
+          .refine((v) => v.name.length > 0, {
+            message: "location name required",
+          })
+          .refine((v) => v.situation.length > 0, {
+            message: "location situation required",
+          }),
       )
       .default([]),
     plot_seeds: z
@@ -178,18 +196,37 @@ const ExtractEntitiesResultSchema = z
             character_ids: z
               // NOTE: 모델이 종종 uuid가 아닌 값(예: '나')을 반환한다.
               // 여기서는 파서를 깨지 않도록 string으로 받고, parse 단계에서 uuid만 필터링한다.
-              .array(z.string().transform((v) => v.trim()).refine(Boolean))
+              .array(
+                z
+                  .string()
+                  .transform((v) => v.trim())
+                  .refine(Boolean),
+              )
               .optional(),
             character_names: z
-              .array(z.string().transform((v) => v.trim()).refine(Boolean))
+              .array(
+                z
+                  .string()
+                  .transform((v) => v.trim())
+                  .refine(Boolean),
+              )
               .optional(),
             location_names: z
-              .array(z.string().transform((v) => v.trim()).refine(Boolean))
+              .array(
+                z
+                  .string()
+                  .transform((v) => v.trim())
+                  .refine(Boolean),
+              )
               .optional(),
           })
           .strict()
-          .refine((v) => v.title.length > 0, { message: "plot seed title required" })
-          .refine((v) => v.detail.length > 0, { message: "plot seed detail required" })
+          .refine((v) => v.title.length > 0, {
+            message: "plot seed title required",
+          })
+          .refine((v) => v.detail.length > 0, {
+            message: "plot seed detail required",
+          }),
       )
       .default([]),
   })
@@ -205,10 +242,30 @@ function parseGenerateResult(value: unknown): GenerateResult {
     ? Array.from(new Set(parsed.resolved_plot_seed_ids)).filter(isUuid)
     : undefined;
 
+  // Entities are optional. When present, validate and normalize.
+  // IMPORTANT: Do not invent entities; parser enforces strict schema.
+  const rawEntities =
+    parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>).entities
+      : undefined;
+
+  const entities = (() => {
+    if (typeof rawEntities === "undefined") return undefined;
+    try {
+      return parseExtractEntitiesResult(rawEntities);
+    } catch {
+      // If entities parsing fails, fall back to undefined and let callers decide.
+      return undefined;
+    }
+  })();
+
   return {
     episode_content: parsed.episode_content,
     resolved_plot_seed_ids:
-      resolvedPlotSeedIds && resolvedPlotSeedIds.length > 0 ? resolvedPlotSeedIds : undefined,
+      resolvedPlotSeedIds && resolvedPlotSeedIds.length > 0
+        ? resolvedPlotSeedIds
+        : undefined,
+    ...(entities ? { entities } : {}),
   };
 }
 
@@ -224,12 +281,15 @@ function normalizeStoryTimeIso(value: string): string {
 
   // story_time is stored as timestamptz but we prefer KST (+09:00) formatting.
   const kst = new Date(ms + 9 * 60 * 60 * 1000);
+
   return kst.toISOString().replace("Z", "+09:00");
 }
 
 function parseExtractFactsResult(value: unknown): ExtractFactsResult {
   const parsed = ExtractFactsResultSchema.parse(value);
-  const deduped = Array.from(new Set(parsed.facts.map((f) => f.trim()).filter(Boolean)));
+  const deduped = Array.from(
+    new Set(parsed.facts.map((f) => f.trim()).filter(Boolean)),
+  );
 
   return {
     facts: deduped.slice(0, 10),
@@ -273,7 +333,7 @@ function parseExtractEntitiesResult(value: unknown): ExtractEntitiesResult {
       "간호사",
       "병사",
       "군인",
-    ].map((v) => v.replaceAll(" ", ""))
+    ].map((v) => v.replaceAll(" ", "")),
   );
 
   const normalizeCharacterName = (nameRaw: string | null): string | null => {
@@ -284,6 +344,7 @@ function parseExtractEntitiesResult(value: unknown): ExtractEntitiesResult {
     if (bannedCharacterNames.has(compact)) return null;
     // Avoid placeholders like "남자1", "여자2"
     if (/^(남자|여자|사람|괴한)\d+$/.test(compact)) return null;
+
     return name;
   };
 
@@ -294,6 +355,7 @@ function parseExtractEntitiesResult(value: unknown): ExtractEntitiesResult {
       if (!k) continue;
       if (!map.has(k)) map.set(k, item);
     }
+
     return Array.from(map.values());
   };
 
@@ -303,21 +365,32 @@ function parseExtractEntitiesResult(value: unknown): ExtractEntitiesResult {
     const name = normalizeCharacterName(c.name);
     if (name) return `name:${name}`;
     const desc = typeof c.descriptor === "string" ? c.descriptor.trim() : "";
+
     return desc ? `desc:${desc}` : "";
   })
     .map((c) => {
-      const id = typeof c.id === "string" && c.id.trim().length > 0 ? c.id.trim() : undefined;
+      const id =
+        typeof c.id === "string" && c.id.trim().length > 0
+          ? c.id.trim()
+          : undefined;
       const rawName = typeof c.name === "string" ? c.name.trim() : "";
       const rawCompact = rawName.replaceAll(" ", "");
       const name = normalizeCharacterName(c.name);
       const nameRevealed = Boolean(
-        typeof c.name_revealed === "boolean" ? c.name_revealed && Boolean(name) : Boolean(name)
+        typeof c.name_revealed === "boolean"
+          ? c.name_revealed && Boolean(name)
+          : Boolean(name),
       );
-      let descriptor = typeof c.descriptor === "string" ? c.descriptor.trim() : null;
+      let descriptor =
+        typeof c.descriptor === "string" ? c.descriptor.trim() : null;
 
       // 모델이 name에 대명사/일반명사를 넣고 descriptor를 생략하는 경우가 잦다.
       // name을 버리는 대신 descriptor로 강등해서 캐릭터 레코드가 완전히 사라지지 않게 한다.
-      if (!nameRevealed && (!descriptor || descriptor.length === 0) && rawCompact) {
+      if (
+        !nameRevealed &&
+        (!descriptor || descriptor.length === 0) &&
+        rawCompact
+      ) {
         if (["나", "저", "우리"].includes(rawCompact)) {
           descriptor = "화자(1인칭)";
         } else {
@@ -325,11 +398,16 @@ function parseExtractEntitiesResult(value: unknown): ExtractEntitiesResult {
         }
       }
 
-      descriptor = descriptor && descriptor.trim().length > 0 ? descriptor.trim() : null;
+      descriptor =
+        descriptor && descriptor.trim().length > 0 ? descriptor.trim() : null;
       const firstExcerpt =
-        typeof c.first_appearance_excerpt === "string" ? c.first_appearance_excerpt.trim() : null;
+        typeof c.first_appearance_excerpt === "string"
+          ? c.first_appearance_excerpt.trim()
+          : null;
       const nameEvidence =
-        typeof c.name_evidence_excerpt === "string" ? c.name_evidence_excerpt.trim() : null;
+        typeof c.name_evidence_excerpt === "string"
+          ? c.name_evidence_excerpt.trim()
+          : null;
 
       return {
         ...(id ? { id } : {}),
@@ -337,14 +415,22 @@ function parseExtractEntitiesResult(value: unknown): ExtractEntitiesResult {
         name_revealed: nameRevealed,
         ...(descriptor ? { descriptor } : {}),
         ...(firstExcerpt ? { first_appearance_excerpt: firstExcerpt } : {}),
-        ...(nameEvidence && nameRevealed ? { name_evidence_excerpt: nameEvidence } : {}),
+        ...(nameEvidence && nameRevealed
+          ? { name_evidence_excerpt: nameEvidence }
+          : {}),
         personality: c.personality.trim(),
-        ...(typeof c.gender !== "undefined" ? { gender: c.gender ?? null } : {}),
-        ...(typeof c.birthday !== "undefined" ? { birthday: c.birthday ?? null } : {}),
+        ...(typeof c.gender !== "undefined"
+          ? { gender: c.gender ?? null }
+          : {}),
+        ...(typeof c.birthday !== "undefined"
+          ? { birthday: c.birthday ?? null }
+          : {}),
       };
     })
     .filter((c) => {
-      if (c.name_revealed) return typeof c.name === "string" && c.name.trim().length >= 2;
+      if (c.name_revealed)
+        return typeof c.name === "string" && c.name.trim().length >= 2;
+
       return typeof c.descriptor === "string" && c.descriptor.trim().length > 0;
     })
     .slice(0, 10);
@@ -360,21 +446,21 @@ function parseExtractEntitiesResult(value: unknown): ExtractEntitiesResult {
       ...(p.character_ids
         ? {
             character_ids: Array.from(
-              new Set(p.character_ids.map((id) => id.trim()).filter(isUuid))
+              new Set(p.character_ids.map((id) => id.trim()).filter(isUuid)),
             ).slice(0, 10),
           }
         : {}),
       ...(p.character_names
         ? {
             character_names: Array.from(
-              new Set(p.character_names.map((n) => n.trim()).filter(Boolean))
+              new Set(p.character_names.map((n) => n.trim()).filter(Boolean)),
             ).slice(0, 10),
           }
         : {}),
       ...(p.location_names
         ? {
             location_names: Array.from(
-              new Set(p.location_names.map((n) => n.trim()).filter(Boolean))
+              new Set(p.location_names.map((n) => n.trim()).filter(Boolean)),
             ).slice(0, 10),
           }
         : {}),
@@ -451,7 +537,10 @@ function extractFirstJsonObject(text: string): unknown {
   });
 }
 
-function renderTemplate(template: string, variables: Record<string, string>): string {
+function renderTemplate(
+  template: string,
+  variables: Record<string, string>,
+): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
     return key in variables ? variables[key] : "";
   });
@@ -468,8 +557,8 @@ export async function geminiEmbedText(params: {
 }): Promise<number[]> {
   const url = new URL(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-      params.model
-    )}:embedContent`
+      params.model,
+    )}:embedContent`,
   );
   url.searchParams.set("key", params.apiKey);
 
@@ -485,9 +574,9 @@ export async function geminiEmbedText(params: {
     }),
   });
 
-  const json = (await res.json().catch(() => null)) as
-    | { embedding?: { values?: unknown } }
-    | null;
+  const json = (await res.json().catch(() => null)) as {
+    embedding?: { values?: unknown };
+  } | null;
 
   if (!res.ok) {
     const message = (json as { error?: { message?: string } } | null)?.error
@@ -555,9 +644,43 @@ function getErrorMessage(err: unknown): string {
 function getErrorStatus(err: unknown): number | undefined {
   if (!err || typeof err !== "object") return undefined;
 
-  const record = err as { status?: unknown };
+  const record = err as { status?: unknown; error?: unknown; message?: unknown };
 
-  return typeof record.status === "number" ? record.status : undefined;
+  // 1) Common shape: { status: number }
+  if (typeof record.status === "number") return record.status;
+  // Some SDKs expose numeric status as string.
+  if (typeof record.status === "string") {
+    const n = Number(record.status);
+    if (Number.isFinite(n)) return Math.floor(n);
+  }
+
+  // 2) Common API error envelope: { error: { code: number } }
+  if (record.error && typeof record.error === "object") {
+    const inner = record.error as { code?: unknown };
+    if (typeof inner.code === "number") return inner.code;
+    if (typeof inner.code === "string") {
+      const n = Number(inner.code);
+      if (Number.isFinite(n)) return Math.floor(n);
+    }
+  }
+
+  // 3) Some SDKs embed code inside message JSON.
+  const message = typeof record.message === "string" ? record.message : "";
+  if (message.trim().startsWith("{") && message.includes('"error"')) {
+    try {
+      const parsed = JSON.parse(message) as { error?: { code?: unknown } };
+      const code = parsed?.error?.code;
+      if (typeof code === "number") return code;
+      if (typeof code === "string") {
+        const n = Number(code);
+        if (Number.isFinite(n)) return Math.floor(n);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return undefined;
 }
 
 function isRetryableGeminiError(err: unknown): boolean {
@@ -567,9 +690,12 @@ function isRetryableGeminiError(err: unknown): boolean {
 
   const message = getErrorMessage(err).toLowerCase();
 
-  if (message.includes("overloaded") || message.includes("unavailable")) return true;
-  if (message.includes("quota") || message.includes("resource_exhausted")) return true;
-  if (message.includes("\"code\":429") || message.includes("\"code\":503")) return true;
+  if (message.includes("overloaded") || message.includes("unavailable"))
+    return true;
+  if (message.includes("quota") || message.includes("resource_exhausted"))
+    return true;
+  if (message.includes('"code":429') || message.includes('"code":503'))
+    return true;
   if (message.includes("gemini returned empty text")) return true;
 
   // Network / client-side timeouts (e.g. TimeoutError from fetch)
@@ -604,15 +730,16 @@ async function sendGeminiWithRetry<T>(params: {
   send: () => Promise<T>;
   maxAttempts: number;
 }): Promise<T> {
-  const baseDelayMs = 700;
+  const baseDelayMs = 3000; // Increased from 700ms to 3s to avoid rate limiting
 
   for (let attempt = 1; attempt <= params.maxAttempts; attempt++) {
     try {
       return await params.send();
     } catch (err) {
-      if (!isRetryableGeminiError(err) || attempt === params.maxAttempts) throw err;
+      if (!isRetryableGeminiError(err) || attempt === params.maxAttempts)
+        throw err;
 
-      const jitter = Math.floor(Math.random() * 250);
+      const jitter = Math.floor(Math.random() * 500); // Increased jitter for better distribution
       const retryDelayMs = getGeminiRetryDelayMs(err);
       const delayMs = retryDelayMs ?? baseDelayMs * 2 ** (attempt - 1) + jitter;
 
@@ -634,13 +761,11 @@ export async function generateEpisodeWithTools(params: {
   novelId: string;
   episodeNo: number;
   maxEpisodeNo: number;
-  previousEpisode?:
-    | {
-        episode_no: number;
-        story_time: string | null;
-        content_tail: string;
-      }
-    | null;
+  previousEpisode?: {
+    episode_no: number;
+    story_time: string | null;
+    content_tail: string;
+  } | null;
   revisionInstruction?: string;
   // When true, disables tool-calling and relies only on provided context.
   disableTools?: boolean;
@@ -648,9 +773,8 @@ export async function generateEpisodeWithTools(params: {
   // Output length control (token-based, model dependent).
   maxOutputTokens?: number;
 }): Promise<GenerateResult> {
-  const systemInstructionBase = (params.disableTools
-    ? systemPromptCompact
-    : systemPrompt
+  const systemInstructionBase = (
+    params.disableTools ? systemPromptCompact : systemPrompt
   ).trim();
   const systemInstruction = params.disableTools
     ? [
@@ -676,7 +800,8 @@ export async function generateEpisodeWithTools(params: {
       systemInstruction,
       // We want high rule adherence (JSON-only, no meta labels) over creativity.
       temperature: 0,
-      ...(typeof params.maxOutputTokens === "number" && Number.isFinite(params.maxOutputTokens)
+      ...(typeof params.maxOutputTokens === "number" &&
+      Number.isFinite(params.maxOutputTokens)
         ? { maxOutputTokens: Math.max(1, Math.floor(params.maxOutputTokens)) }
         : {}),
       responseMimeType: "application/json",
@@ -688,20 +813,86 @@ export async function generateEpisodeWithTools(params: {
             type: Type.ARRAY,
             items: { type: Type.STRING },
           },
+          entities: {
+            type: Type.OBJECT,
+            properties: {
+              characters: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING },
+                    name: { type: Type.STRING },
+                    name_revealed: { type: Type.BOOLEAN },
+                    descriptor: { type: Type.STRING },
+                    first_appearance_excerpt: { type: Type.STRING },
+                    name_evidence_excerpt: { type: Type.STRING },
+                    personality: { type: Type.STRING },
+                    gender: { type: Type.STRING },
+                    birthday: { type: Type.STRING },
+                  },
+                  required: ["personality"],
+                },
+              },
+              locations: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    name: { type: Type.STRING },
+                    situation: { type: Type.STRING },
+                  },
+                  required: ["name", "situation"],
+                },
+              },
+              plot_seeds: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    title: { type: Type.STRING },
+                    detail: { type: Type.STRING },
+                    character_ids: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                    character_names: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                    location_names: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                  },
+                  required: ["title", "detail"],
+                },
+              },
+            },
+            required: ["characters", "locations", "plot_seeds"],
+          },
         },
-        required: ["episode_content"],
-        propertyOrdering: ["episode_content", "resolved_plot_seed_ids"],
+        required: ["episode_content", "entities"],
+        propertyOrdering: [
+          "episode_content",
+          "resolved_plot_seed_ids",
+          "entities",
+        ],
       },
     },
   });
 
   const previousEpisode = params.previousEpisode ?? null;
 
-  const baseMessage = renderTemplate(userPromptTemplate, {
+  const userPrompt = previousEpisode ? userPromptTemplate : userEpisode1PromptTemplate;
+
+  const baseMessage = renderTemplate(userPrompt, {
     novelId: params.novelId,
     episodeNo: String(params.episodeNo),
     maxEpisodeNo: String(params.maxEpisodeNo),
-    previousEpisodeNo: previousEpisode ? String(previousEpisode.episode_no) : "",
+    previousEpisodeNo: previousEpisode
+      ? String(previousEpisode.episode_no)
+      : "",
     previousEpisodeStoryTime: previousEpisode?.story_time ?? "",
     previousEpisodeContentTail: previousEpisode?.content_tail ?? "",
   }).trim();
@@ -771,7 +962,8 @@ export async function generateEpisodeWithTools(params: {
         err instanceof z.ZodError
           ? err.issues
               .map((issue) => {
-                const path = issue.path.length > 0 ? issue.path.join(".") : "(root)";
+                const path =
+                  issue.path.length > 0 ? issue.path.join(".") : "(root)";
 
                 return `- ${path}: ${issue.message}`;
               })
@@ -788,7 +980,10 @@ export async function generateEpisodeWithTools(params: {
           const next = await chat.sendMessage({ message: repairPrompt });
 
           const repairedText = next.text;
-          if (typeof repairedText !== "string" || repairedText.trim().length === 0)
+          if (
+            typeof repairedText !== "string" ||
+            repairedText.trim().length === 0
+          )
             throw new AgentError({
               type: "UPSTREAM_API_ERROR",
               code: "UNAVAILABLE",
@@ -828,21 +1023,80 @@ export async function generateEpisodeWithTools(params: {
               message: jsonOnlyRepairPrompt,
               config: {
                 responseMimeType: "application/json",
-                 responseSchema: {
-                   type: Type.OBJECT,
-                   properties: {
-                     episode_content: { type: Type.STRING },
-                     resolved_plot_seed_ids: {
-                       type: Type.ARRAY,
-                       items: { type: Type.STRING },
-                     },
-                   },
-                   required: ["episode_content"],
-                   propertyOrdering: [
-                     "episode_content",
-                     "resolved_plot_seed_ids",
-                   ],
-                 },
+                responseSchema: {
+                  type: Type.OBJECT,
+                  properties: {
+                    episode_content: { type: Type.STRING },
+                    resolved_plot_seed_ids: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                    },
+                    entities: {
+                      type: Type.OBJECT,
+                      properties: {
+                        characters: {
+                          type: Type.ARRAY,
+                          items: {
+                            type: Type.OBJECT,
+                            properties: {
+                              id: { type: Type.STRING },
+                              name: { type: Type.STRING },
+                              name_revealed: { type: Type.BOOLEAN },
+                              descriptor: { type: Type.STRING },
+                              first_appearance_excerpt: { type: Type.STRING },
+                              name_evidence_excerpt: { type: Type.STRING },
+                              personality: { type: Type.STRING },
+                              gender: { type: Type.STRING },
+                              birthday: { type: Type.STRING },
+                            },
+                            required: ["personality"],
+                          },
+                        },
+                        locations: {
+                          type: Type.ARRAY,
+                          items: {
+                            type: Type.OBJECT,
+                            properties: {
+                              name: { type: Type.STRING },
+                              situation: { type: Type.STRING },
+                            },
+                            required: ["name", "situation"],
+                          },
+                        },
+                        plot_seeds: {
+                          type: Type.ARRAY,
+                          items: {
+                            type: Type.OBJECT,
+                            properties: {
+                              title: { type: Type.STRING },
+                              detail: { type: Type.STRING },
+                              character_ids: {
+                                type: Type.ARRAY,
+                                items: { type: Type.STRING },
+                              },
+                              character_names: {
+                                type: Type.ARRAY,
+                                items: { type: Type.STRING },
+                              },
+                              location_names: {
+                                type: Type.ARRAY,
+                                items: { type: Type.STRING },
+                              },
+                            },
+                            required: ["title", "detail"],
+                          },
+                        },
+                      },
+                      required: ["characters", "locations", "plot_seeds"],
+                    },
+                  },
+                  required: ["episode_content", "entities"],
+                  propertyOrdering: [
+                    "episode_content",
+                    "resolved_plot_seed_ids",
+                    "entities",
+                  ],
+                },
                 tools: [],
                 toolConfig: {
                   functionCallingConfig: {
@@ -853,7 +1107,10 @@ export async function generateEpisodeWithTools(params: {
             });
 
             const jsonOnlyText = next.text;
-            if (typeof jsonOnlyText !== "string" || jsonOnlyText.trim().length === 0)
+            if (
+              typeof jsonOnlyText !== "string" ||
+              jsonOnlyText.trim().length === 0
+            )
               throw new AgentError({
                 type: "UPSTREAM_API_ERROR",
                 code: "UNAVAILABLE",
@@ -867,7 +1124,10 @@ export async function generateEpisodeWithTools(params: {
         });
 
         const jsonOnlyText = jsonOnly.text;
-        if (typeof jsonOnlyText !== "string" || jsonOnlyText.trim().length === 0)
+        if (
+          typeof jsonOnlyText !== "string" ||
+          jsonOnlyText.trim().length === 0
+        )
           throw new AgentError({
             type: "UPSTREAM_API_ERROR",
             code: "UNAVAILABLE",
@@ -960,6 +1220,7 @@ export async function extractEpisodeFacts(params: {
 
   const json = extractFirstJsonObject(text);
   const parsed = parseExtractFactsResult(json);
+
   return parsed.facts;
 }
 
@@ -1017,9 +1278,18 @@ export async function extractEpisodeEntities(params: {
               properties: {
                 title: { type: Type.STRING },
                 detail: { type: Type.STRING },
-                character_ids: { type: Type.ARRAY, items: { type: Type.STRING } },
-                character_names: { type: Type.ARRAY, items: { type: Type.STRING } },
-                location_names: { type: Type.ARRAY, items: { type: Type.STRING } },
+                character_ids: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                character_names: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+                location_names: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
               },
               required: ["title", "detail"],
             },
@@ -1040,8 +1310,12 @@ export async function extractEpisodeEntities(params: {
   const storyBible = (params.storyBible ?? "").trim();
   const prefetched = (params.prefetchedContext ?? "").trim();
   const prompt = [
-    storyBible ? "[story_bible]\n---\n" + storyBible.slice(0, 3000) + "\n---" : "[story_bible]\n(없음)",
-    prefetched ? "\n[현재 DB 스냅샷]\n---\n" + prefetched.slice(0, 3000) + "\n---" : "\n[현재 DB 스냅샷]\n(없음)",
+    storyBible
+      ? "[story_bible]\n---\n" + storyBible.slice(0, 3000) + "\n---"
+      : "[story_bible]\n(없음)",
+    prefetched
+      ? "\n[현재 DB 스냅샷]\n---\n" + prefetched.slice(0, 3000) + "\n---"
+      : "\n[현재 DB 스냅샷]\n(없음)",
     "\n[새 에피소드 본문]",
     "---",
     params.episodeContent,
@@ -1065,6 +1339,7 @@ export async function extractEpisodeEntities(params: {
     });
 
   const json = extractFirstJsonObject(text);
+
   return parseExtractEntitiesResult(json);
 }
 
@@ -1099,11 +1374,16 @@ export async function extractStoryTimeFromEpisode(params: {
     },
   });
 
-  const previous = typeof params.previousStoryTime === "string" ? params.previousStoryTime : "";
+  const previous =
+    typeof params.previousStoryTime === "string"
+      ? params.previousStoryTime
+      : "";
 
   const pad2 = (n: number) => String(n).padStart(2, "0");
 
-  const extractTimeOfDay = (text: string): { hour: number; minute: number } | null => {
+  const extractTimeOfDay = (
+    text: string,
+  ): { hour: number; minute: number } | null => {
     const normalized = text.replaceAll("\n", " ");
 
     if (normalized.includes("정오")) return { hour: 12, minute: 0 };
@@ -1130,6 +1410,7 @@ export async function extractStoryTimeFromEpisode(params: {
 
     if (hour < 0 || hour > 23) return null;
     if (minute < 0 || minute > 59) return null;
+
     return { hour, minute };
   };
 
@@ -1155,6 +1436,7 @@ export async function extractStoryTimeFromEpisode(params: {
           details: { previousStoryTime: previous, storyTime: candidate },
         });
     }
+
     return iso;
   };
 
@@ -1168,6 +1450,7 @@ export async function extractStoryTimeFromEpisode(params: {
   if (parsedTime) {
     try {
       const candidate = `${baseDate}T${pad2(parsedTime.hour)}:${pad2(parsedTime.minute)}:00+09:00`;
+
       return validate(candidate);
     } catch {
       // fall through to model-based extraction
@@ -1236,14 +1519,15 @@ export async function extractStoryTimeFromEpisode(params: {
 
   const prevMs = previous ? Date.parse(previous) : Number.NaN;
   if (Number.isFinite(prevMs))
-    return normalizeStoryTimeIso(new Date(prevMs + 5 * 60 * 1000).toISOString());
+    return normalizeStoryTimeIso(
+      new Date(prevMs + 5 * 60 * 1000).toISOString(),
+    );
   if (lastErr) throw lastErr;
+
   return normalizeStoryTimeIso(new Date().toISOString());
 }
 
-function normalizeReviewSeverity(
-  value: string
-): "low" | "medium" | "high" {
+function normalizeReviewSeverity(value: string): "low" | "medium" | "high" {
   const v = value.trim().toLowerCase();
 
   if (
@@ -1272,9 +1556,7 @@ function normalizeReviewSeverity(
 
 const ReviewIssueSchema = z
   .object({
-    severity: z
-      .string()
-      .transform((v) => normalizeReviewSeverity(v)),
+    severity: z.string().transform((v) => normalizeReviewSeverity(v)),
     description: z.string().transform((v) => v.trim()),
   })
   .strict();
@@ -1299,7 +1581,11 @@ const ReviewResultSchema = z
 export async function reviewEpisodeContinuity(params: {
   ai: GoogleGenAI;
   model: string;
-  previousEpisodes: Array<{ episode_no: number; story_time: string | null; content_tail: string }>;
+  previousEpisodes: Array<{
+    episode_no: number;
+    story_time: string | null;
+    content_tail: string;
+  }>;
   draft: EpisodeDraft;
 }): Promise<ReviewResult> {
   const previous = params.previousEpisodes
@@ -1409,7 +1695,9 @@ export async function reviewEpisodeContinuity(params: {
   return {
     passed,
     issues: parsed.issues,
-    ...(revisionInstruction ? { revision_instruction: revisionInstruction } : {}),
+    ...(revisionInstruction
+      ? { revision_instruction: revisionInstruction }
+      : {}),
   };
 }
 
@@ -1417,7 +1705,11 @@ export async function reviewEpisodeConsistency(params: {
   ai: GoogleGenAI;
   model: string;
   storyBible?: string;
-  previousEpisodes: Array<{ episode_no: number; story_time: string | null; content_tail: string }>;
+  previousEpisodes: Array<{
+    episode_no: number;
+    story_time: string | null;
+    content_tail: string;
+  }>;
   groundingChunks: Array<{
     kind: "fact" | "episode";
     episode_no: number;
@@ -1440,10 +1732,14 @@ export async function reviewEpisodeConsistency(params: {
     .slice()
     .sort((a, b) => {
       if (a.episode_no !== b.episode_no) return a.episode_no - b.episode_no;
+
       return b.similarity - a.similarity;
     })
     .map((c) => {
-      const sim = Number.isFinite(c.similarity) ? c.similarity.toFixed(4) : String(c.similarity);
+      const sim = Number.isFinite(c.similarity)
+        ? c.similarity.toFixed(4)
+        : String(c.similarity);
+
       return `- (${c.kind}) ep=${c.episode_no} sim=${sim}\n${c.content}`;
     })
     .join("\n\n");
@@ -1511,7 +1807,9 @@ export async function reviewEpisodeConsistency(params: {
   });
 
   const prompt = [
-    storyBible ? "[story_bible]\n---\n" + storyBible + "\n---" : "[story_bible]\n(없음)",
+    storyBible
+      ? "[story_bible]\n---\n" + storyBible + "\n---"
+      : "[story_bible]\n(없음)",
     "\n[직전 에피소드 발췌]",
     previous || "(없음)",
     "\n[과거 근거(검색 결과)]",
@@ -1550,14 +1848,16 @@ export async function reviewEpisodeConsistency(params: {
   return {
     passed,
     issues: parsed.issues,
-    ...(revisionInstruction ? { revision_instruction: revisionInstruction } : {}),
+    ...(revisionInstruction
+      ? { revision_instruction: revisionInstruction }
+      : {}),
   };
 }
 
 export type {
+  EpisodeDraft,
+  ExtractEntitiesResult,
+  ExtractFactsResult,
   GenerateResult,
   ReviewResult,
-  ExtractFactsResult,
-  ExtractEntitiesResult,
-  EpisodeDraft,
 };

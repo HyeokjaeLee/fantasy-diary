@@ -8,8 +8,8 @@ import {
   getPreviousEpisodeForPrompt,
   indexEpisodeFacts,
   indexEpisodeSummary,
-  insertPlotSeed,
   insertEpisode,
+  insertPlotSeed,
   markPlotSeedsIntroduced,
   ragSearchChunks,
   ragSearchSummaries,
@@ -20,7 +20,6 @@ import {
 import { AgentError } from "./errors/agentError";
 import {
   extractEpisodeFacts,
-  extractEpisodeEntities,
   generateEpisodeWithTools,
   reviewEpisodeConsistency,
   reviewEpisodeContinuity,
@@ -39,31 +38,25 @@ async function main(): Promise<void> {
   const debug = toBoolean(args.debug, false);
   const disableWriterTools = toBoolean(args.disableWriterTools, false);
 
-  const maxTiktakaRaw = args.maxTiktaka;
-  const parsedMaxTiktaka =
-    typeof maxTiktakaRaw === "string" ? Number(maxTiktakaRaw) : NaN;
-  const maxTiktaka =
-    Number.isFinite(parsedMaxTiktaka) && parsedMaxTiktaka >= 0
-      ? Math.floor(parsedMaxTiktaka)
-      : 4;
-
   const storyTimeStepMinutesRaw = args.storyTimeStepMinutes;
   const storyTimeStepMinutesParsed =
     typeof storyTimeStepMinutesRaw === "string"
       ? Number(storyTimeStepMinutesRaw)
       : NaN;
   const storyTimeStepMinutes =
-    Number.isFinite(storyTimeStepMinutesParsed) && storyTimeStepMinutesParsed > 0
+    Number.isFinite(storyTimeStepMinutesParsed) &&
+    storyTimeStepMinutesParsed > 0
       ? Math.floor(storyTimeStepMinutesParsed)
       : 15;
 
   const startStoryTimeIso =
     typeof args.startStoryTimeIso === "string" && args.startStoryTimeIso.trim()
       ? args.startStoryTimeIso.trim()
-      : process.env.START_STORY_TIME_ISO ?? "2026-01-18T17:15:00+09:00";
+      : (process.env.START_STORY_TIME_ISO ?? "2026-01-18T17:15:00+09:00");
 
   const toKstIso = (ms: number): string => {
     const kst = new Date(ms + 9 * 60 * 60 * 1000);
+
     return kst.toISOString().replace("Z", "+09:00");
   };
 
@@ -78,7 +71,8 @@ async function main(): Promise<void> {
   logger.debug("run.start", { kind, novelId, dryRun });
 
   const geminiModel = process.env.GEMINI_MODEL ?? "gemini-3-flash-preview";
-  const geminiEmbeddingModel = process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-001";
+  const geminiEmbeddingModel =
+    process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-001";
   const ragEmbeddingModelId =
     process.env.RAG_EMBEDDING_MODEL_ID ?? `gemini/${geminiEmbeddingModel}`;
 
@@ -143,6 +137,10 @@ async function main(): Promise<void> {
     episode_id?: string;
     status: "ok" | "dry_run" | "review_failed";
     issues?: unknown;
+    // When dry-run, include the generated content for human review.
+    episode_content?: string;
+    content_chars?: number;
+    story_time?: string;
   }> = [];
 
   let hadFailures = false;
@@ -157,14 +155,14 @@ async function main(): Promise<void> {
     const maxEpisodeNo = episodeNo - 1;
 
     const previousEpisode =
-      maxEpisodeNo >= 1
-        ? await getPreviousEpisodeForPrompt({
-            supabase,
-            novelId: targetNovelId,
-            episodeNo: maxEpisodeNo,
-            maxChars: 2500,
-          })
-        : null;
+          maxEpisodeNo >= 1
+          ? await getPreviousEpisodeForPrompt({
+              supabase,
+              novelId: targetNovelId,
+              episodeNo: maxEpisodeNo,
+              maxChars: 4000,
+            })
+          : null;
 
     const tool = createGeminiSupabaseCallableTool({
       supabase,
@@ -183,14 +181,14 @@ async function main(): Promise<void> {
     });
 
     const previous2Episode =
-      maxEpisodeNo - 1 >= 1
-        ? await getPreviousEpisodeForPrompt({
-            supabase,
-            novelId: targetNovelId,
-            episodeNo: maxEpisodeNo - 1,
-            maxChars: 2500,
-          })
-        : null;
+          maxEpisodeNo - 1 >= 1
+          ? await getPreviousEpisodeForPrompt({
+              supabase,
+              novelId: targetNovelId,
+              episodeNo: maxEpisodeNo - 1,
+              maxChars: 4000,
+            })
+          : null;
 
     // writer(작성) ↔ reviewer(검토) 티키타카(수정 사이클) 횟수 제한은
     // 아래 reviewAttempt 루프(maxReviewAttempts)에서 강제한다.
@@ -223,7 +221,9 @@ async function main(): Promise<void> {
       ? storyBible.trim().slice(0, 2500)
       : storyBible;
 
-    const parseLengthRange = (text: string): { min: number; max: number } | null => {
+    const parseLengthRange = (
+      text: string,
+    ): { min: number; max: number } | null => {
       const m = text.match(
         /(\d{1,3}(?:,\d{3})?)\s*~\s*(\d{1,3}(?:,\d{3})?)\s*자/,
       );
@@ -232,6 +232,7 @@ async function main(): Promise<void> {
       const max = Number(m[2].replaceAll(",", ""));
       if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
       if (min <= 0 || max <= 0 || min > max) return null;
+
       return { min: Math.floor(min), max: Math.floor(max) };
     };
 
@@ -241,10 +242,15 @@ async function main(): Promise<void> {
     // Goal: prevent multi-thousand-char outputs that repeatedly violate lengthRange.
     const maxOutputTokensBase =
       maxOutputTokensEnv ??
-      Math.min(1536, Math.max(384, Math.ceil(lengthRange.max * 0.85)));
+      // Heuristic: Korean prose often expands beyond token budget.
+      // Keep this conservative to avoid repeated "too long" retries.
+      Math.min(1024, Math.max(256, Math.ceil(lengthRange.max * 0.6)));
 
     const prevStoryTime = previousEpisode?.story_time ?? null;
-    const prevMs = typeof prevStoryTime === "string" ? Date.parse(prevStoryTime) : Number.NaN;
+    const prevMs =
+      typeof prevStoryTime === "string"
+        ? Date.parse(prevStoryTime)
+        : Number.NaN;
     const stepMs = storyTimeStepMinutes * 60 * 1000;
 
     const baseMs = Number.isFinite(prevMs)
@@ -262,14 +268,26 @@ async function main(): Promise<void> {
     const targetStoryTimeMs = baseMs;
     const targetStoryTimeIso = toKstIso(targetStoryTimeMs);
 
-    const normalizeForMatch = (text: string): string => {
-      return text.replace(/\s+/g, " ").trim();
-    };
+    const timeOfDayHint = (() => {
+      // Derive a coarse time-of-day hint from story_time.
+      // IMPORTANT: This hint is for internal coherence only; the prose must not include numeric clock times.
+      const kst = new Date(targetStoryTimeMs + 9 * 60 * 60 * 1000);
+      const hour = kst.getUTCHours();
+      if (hour >= 0 && hour <= 4) return "깊은 밤";
+      if (hour >= 5 && hour <= 8) return "이른 아침";
+      if (hour >= 9 && hour <= 15) return "낮";
+      if (hour >= 16 && hour <= 17) return "해질 무렵";
+      if (hour >= 18 && hour <= 21) return "밤";
+      return "늦은 밤";
+    })();
 
     const startsWithAtmosphere = (text: string): boolean => {
       const start = text.trimStart().slice(0, 40);
+
       // Keep this list generic (works across novels) and only for *opening* detection.
-      return /^(어둠|침묵|정적|바람|추위|밤|새벽|눈|비)(이|가|은|는)?\b/.test(start);
+      return /^(어둠|침묵|정적|바람|추위|밤|새벽|눈|비)(이|가|은|는)?\b/.test(
+        start,
+      );
     };
 
     const hasExplicitClockTime = (text: string): boolean => {
@@ -284,101 +302,64 @@ async function main(): Promise<void> {
       );
     };
 
-    // Heuristic: strip common Korean postpositions from the end of a token.
-    // This helps us pick more specific continuity anchor keywords (e.g., "뒷문으로" -> "뒷문").
-    const stripKoreanParticleSuffix = (raw: string): string => {
-      let t = raw.trim().replaceAll(" ", "");
-      if (!t) return t;
+    const hasUnearnedInjuryInOpening = (params: {
+      content: string;
+      previousTail: string | null;
+    }): boolean => {
+      // Episode 1 has no previous tail; allow injuries if they are earned in-scene.
+      if (maxEpisodeNo < 1) return false;
 
-      const suffixes = [
-        // 2-3 char particles
-        "으로",
-        "에서",
-        "에게",
-        "까지",
-        "부터",
-        "처럼",
-        "보다",
-        // 1 char particles
-        "을",
-        "를",
-        "은",
-        "는",
-        "이",
-        "가",
-        "에",
-        "의",
-        "와",
-        "과",
-        "도",
-        "만",
-        "로",
+      const firstTwoParagraphs = params.content
+        .split(/\n\s*\n/)
+        .slice(0, 2)
+        .join("\n\n")
+        .trim();
+      if (!firstTwoParagraphs) return false;
+
+      // Generic lexicon to catch sudden injuries introduced in the opening.
+      // We only block if the same keyword did NOT appear in previousTail.
+      const injuryKeywords = [
+        "부상",
+        "상처",
+        "출혈",
+        "피",
+        "피투성이",
+        "골절",
+        "부러",
+        "찢어",
+        "찢긴",
+        "옆구리",
+        "복부",
+        "갈비",
       ];
 
-      // Strip repeatedly in case of stacked suffixes.
-      for (let i = 0; i < 3; i++) {
-        const next = suffixes.find((s) => t.length > s.length && t.endsWith(s));
-        if (!next) break;
-        t = t.slice(0, -next.length);
-      }
+      const hasInjury = injuryKeywords.some((k) => firstTwoParagraphs.includes(k));
+      if (!hasInjury) return false;
 
-      return t;
+      const previousTail = params.previousTail ?? "";
+      const hadInjuryBefore = injuryKeywords.some((k) => previousTail.includes(k));
+      return !hadInjuryBefore;
     };
 
-    const continuityAnchor =
-      previousEpisode && typeof previousEpisode.content_tail === "string"
-        ? (() => {
-            const tail = normalizeForMatch(previousEpisode.content_tail);
-
-            // Extract a few trailing "anchor tokens" from the previous tail.
-            // We avoid verbatim sentence anchoring because it is fragile (quotes, odd unicode, etc.).
-            const stopwords = new Set(
-              [
-                // pronouns / determiners
-                "나",
-                "저",
-                "우리",
-                "너",
-                "당신",
-                "그",
-                "그녀",
-                "그들",
-                "이것",
-                "저것",
-                // very common nouns
-                "사람",
-                "시간",
-                "때",
-                "순간",
-                "상황",
-                "생각",
-              ].map((v) => v.replaceAll(" ", "")),
-            );
-
-            const tokens = (tail.match(/[가-힣A-Za-z0-9]{2,}/g) ?? [])
-              .map((t) => stripKoreanParticleSuffix(t))
-              .map((t) => t.trim())
-              .filter((t) => t.length >= 2)
-              .filter((t) => !stopwords.has(t));
-
-            // Prefer more specific tokens from the tail.
-            const anchorTokens = Array.from(new Set(tokens.slice(-20)))
-              .filter((t) => /^[가-힣A-Za-z0-9]{2,}$/.test(t))
-              .slice(-4);
-
-            return anchorTokens.length > 0
-              ? { tokens: anchorTokens, display: anchorTokens.join(", ") }
-              : null;
-          })()
-        : null;
-
-    const guardrails = [
-      `분량(하드 제한): ${lengthRange.min}~${lengthRange.max}자`,
-      "연속성(하드 제한): 첫 2문단은 직전 장면 발췌의 즉시 결과로만 구성 (프롤로그/세계관 소개/상황 정리/장소 점프/시간 점프 금지)",
-      "금지: 새 인물/새 고유명사(조직/지명 포함)/새 설정을 갑자기 도입하지 마라. 필요하면 '그 남자/그 여자/그 목소리'처럼 익명 처리.",
-      "오프닝(하드 제한): 첫 문장은 배경/날씨/분위기(어둠/추위/바람/정적 등)로 시작하지 말고, 반드시 인물의 행동/선택/대사로 시작.",
-      "시간 표현(하드 제한): 본문에 숫자 시각 표기 금지(예: '오전/오후 N시', 'N시 N분', 'HH:MM'). story_time은 DB에 저장되므로 상대 표현(잠시 후/몇 분 뒤/해가 기울 무렵)을 우선 사용.",
-    ].join("\n");
+    const guardrails = (maxEpisodeNo < 1
+      ? [
+          `분량(하드 제한): ${lengthRange.min}~${lengthRange.max}자`,
+          "도입(하드 제한): 첫 2문단은 '지금 당장 벌어지는 사건/위협/선택'만으로 구성 (프롤로그/세계관 소개/장황한 상황 정리 금지)",
+          "오프닝(하드 제한): 첫 문장은 배경/날씨/분위기(어둠/추위/바람/정적 등)로 시작하지 말고, 반드시 인물의 행동/선택/대사로 시작.",
+          "신규 요소(허용): 첫 회차는 새 인물/새 고유명사/새 장소를 소개할 수 있다. 단, 한꺼번에 과다 도입 금지(인물 1~2명, 장소 1곳 수준) + 정보 나열 금지(행동/대사로 보여라).",
+          "시간 표현(하드 제한): 본문에 숫자 시각 표기 금지(예: '오전/오후 N시', 'N시 N분', 'HH:MM'). story_time은 DB에 저장되므로 상대 표현(잠시 후/얼마 후/어느새/주변이 더 어두워진 뒤)을 우선 사용.",
+          `시간대 힌트: 현재는 '${timeOfDayHint}' 쪽 분위기다. (본문에 숫자 시각 표기 금지, 시간 역행 표현 금지)`,
+        ]
+      : [
+          `분량(하드 제한): ${lengthRange.min}~${lengthRange.max}자`,
+          "연속성(하드 제한): 첫 2문단은 직전 장면 발췌의 즉시 결과로만 구성 (프롤로그/세계관 소개/상황 정리/장소 점프/시간 점프 금지)",
+          "금지: 새 인물/새 고유명사(조직/지명 포함)/새 설정을 갑자기 도입하지 마라. 필요하면 '그 남자/그 여자/그 목소리'처럼 익명 처리.",
+          "금지: 직전 장면 발췌에 근거 없는 새 부상/상태 악화(출혈/골절/옆구리 찢김 등)를 첫 2문단에서 갑자기 만들지 마라.",
+          "오프닝(하드 제한): 첫 문장은 배경/날씨/분위기(어둠/추위/바람/정적 등)로 시작하지 말고, 반드시 인물의 행동/선택/대사로 시작.",
+          "시간 표현(하드 제한): 본문에 숫자 시각 표기 금지(예: '오전/오후 N시', 'N시 N분', 'HH:MM'). story_time은 DB에 저장되므로 상대 표현(잠시 후/얼마 후/어느새/주변이 더 어두워진 뒤)을 우선 사용.",
+          `시간대 힌트: 현재는 '${timeOfDayHint}' 쪽 분위기다. (본문에 숫자 시각 표기 금지, 시간 역행 표현 금지)`,
+        ]
+    ).join("\n");
 
     const novelTitle =
       typeof novelRows?.[0]?.title === "string" ? novelRows[0].title : "";
@@ -387,26 +368,28 @@ async function main(): Promise<void> {
 
     const prefetched = disableWriterTools
       ? await (async () => {
-          const [charactersRes, locationsRes, plotSeedsRes] = await Promise.all([
-            supabase
-              .from("characters")
-              .select(
-                "id,name,name_revealed,descriptor,first_appearance_excerpt,personality,gender,birthday",
-              )
-              .eq("novel_id", targetNovelId)
-              .limit(30),
-            supabase
-              .from("locations")
-              .select("name,situation")
-              .eq("novel_id", targetNovelId)
-              .limit(30),
-            supabase
-              .from("plot_seeds")
-              .select("title,detail,status")
-              .eq("novel_id", targetNovelId)
-              .eq("status", "open")
-              .limit(30),
-          ]);
+          const [charactersRes, locationsRes, plotSeedsRes] = await Promise.all(
+            [
+              supabase
+                .from("characters")
+                .select(
+                  "id,name,name_revealed,descriptor,first_appearance_excerpt,personality,gender,birthday",
+                )
+                .eq("novel_id", targetNovelId)
+                .limit(30),
+              supabase
+                .from("locations")
+                .select("name,situation")
+                .eq("novel_id", targetNovelId)
+                .limit(30),
+              supabase
+                .from("plot_seeds")
+                .select("title,detail,status")
+                .eq("novel_id", targetNovelId)
+                .eq("status", "open")
+                .limit(30),
+            ],
+          );
 
           if (charactersRes.error)
             throw new AgentError({
@@ -477,6 +460,7 @@ async function main(): Promise<void> {
               ? JSON.stringify(prefetched.plot_seeds)
               : "(없음)",
           );
+
           return lines.join("\n");
         })()
       : "";
@@ -492,13 +476,42 @@ async function main(): Promise<void> {
 
     const t0 = Date.now();
 
-    const maxReviewAttempts = Math.min(maxTiktaka + 1, 3);
-    const maxWriterAttempts = 8;
+    // TEMP: reduce review/tiktaka loops to lower Gemini call volume.
+    // We want the prompt+guardrails to pass in a single review attempt.
+    const maxReviewAttemptsEnvRaw = process.env.MAX_REVIEW_ATTEMPTS;
+    const maxReviewAttemptsEnvParsed =
+      typeof maxReviewAttemptsEnvRaw === "string" ? Number(maxReviewAttemptsEnvRaw) : NaN;
+    // Default to 2 so a single failed review can feed back revision instructions
+    // and retry without needing an external rerun.
+    const maxReviewAttemptsDefault = 3;
+    const maxReviewAttempts =
+      Number.isFinite(maxReviewAttemptsEnvParsed) && maxReviewAttemptsEnvParsed > 0
+        ? Math.max(1, Math.min(3, Math.floor(maxReviewAttemptsEnvParsed)))
+        : maxReviewAttemptsDefault;
+
+    const maxWriterAttemptsEnvRaw = process.env.MAX_WRITER_ATTEMPTS;
+    const maxWriterAttemptsEnvParsed =
+      typeof maxWriterAttemptsEnvRaw === "string" ? Number(maxWriterAttemptsEnvRaw) : NaN;
+    // Default is intentionally low to avoid Gemini call storms (429).
+    const maxWriterAttemptsDefault = 3;
+    const maxWriterAttempts =
+      Number.isFinite(maxWriterAttemptsEnvParsed) && maxWriterAttemptsEnvParsed > 0
+        ? Math.max(1, Math.min(8, Math.floor(maxWriterAttemptsEnvParsed)))
+        : maxWriterAttemptsDefault;
+
+    // Default ON: prevents continuity drift that often causes writer retries and resets.
+    // You can disable explicitly with ENABLE_CONTINUITY_REVIEW=false.
+    const enableContinuityReview =
+      process.env.ENABLE_CONTINUITY_REVIEW !== "false";
 
     let reviewerRevisionInstruction: string | undefined;
     let passedAllReviews = false;
 
-    for (let reviewAttempt = 1; reviewAttempt <= maxReviewAttempts; reviewAttempt++) {
+    for (
+      let reviewAttempt = 1;
+      reviewAttempt <= maxReviewAttempts;
+      reviewAttempt++
+    ) {
       let writerRevisionInstruction: string | undefined;
       let writerMaxOutputTokens = maxOutputTokensBase;
 
@@ -508,7 +521,11 @@ async function main(): Promise<void> {
         story_time: string;
       } | null = null;
 
-      for (let writerAttempt = 1; writerAttempt <= maxWriterAttempts; writerAttempt++) {
+      for (
+        let writerAttempt = 1;
+        writerAttempt <= maxWriterAttempts;
+        writerAttempt++
+      ) {
         generated = await generateEpisodeWithTools({
           ai,
           model: geminiModel,
@@ -517,8 +534,14 @@ async function main(): Promise<void> {
           episodeNo,
           maxEpisodeNo,
           previousEpisode,
-          revisionInstruction: [guardrails, reviewerRevisionInstruction, writerRevisionInstruction]
-            .filter((v): v is string => typeof v === "string" && v.trim().length > 0)
+          revisionInstruction: [
+            guardrails,
+            reviewerRevisionInstruction,
+            writerRevisionInstruction,
+          ]
+            .filter(
+              (v): v is string => typeof v === "string" && v.trim().length > 0,
+            )
             .join("\n\n"),
           disableTools: disableWriterTools,
           prefetchedContext: writerPrefetchedContext,
@@ -527,56 +550,34 @@ async function main(): Promise<void> {
 
         const content = generated.episode_content;
 
-        // Hard continuity enforcement: require some anchor keywords from the previous tail.
-        if (continuityAnchor) {
-          const start = normalizeForMatch(content.slice(0, 800));
-          const present = continuityAnchor.tokens.filter((t) => start.includes(t));
-          const requiredCount = Math.min(2, continuityAnchor.tokens.length);
-
-          if (present.length < Math.max(1, requiredCount)) {
-            const instruction = [
-              "연속성 하드 제한 위반: 새 회차 초반이 직전 장면 발췌와 단절됐다.",
-              "첫 2문단 안에서 직전 장면의 상황/행동/대사를 **직접 이어서** 서술하라.",
-              `아래 키워드 중 최소 ${Math.max(1, requiredCount)}개를 첫 2문단에 **그대로** 포함하라: ${
-                continuityAnchor.display
-              }`,
-              "추가 규칙: 장소/시간 점프 없이 같은 장면을 이어서 쓴다.",
-            ].join("\n");
-
-            if (writerAttempt === maxWriterAttempts) {
-              hadFailures = true;
-              reviewFailed = true;
-              results.push({
-                novel_id: targetNovelId,
-                episode_no: episodeNo,
-                status: "review_failed",
-                issues: [{ severity: "high", description: instruction }],
-              });
-              break;
-            }
-
-            writerRevisionInstruction = instruction;
-            continue;
-          }
-        }
-
         // Avoid cliché "atmosphere-first" openings and explicit clock times.
         // If violated, request a rewrite while keeping continuity.
         {
           const trimmed = content.trimStart();
           const hasBadOpening = startsWithAtmosphere(trimmed);
           const hasBadTime = hasExplicitClockTime(content);
+          const hasBadInjury = hasUnearnedInjuryInOpening({
+            content,
+            previousTail: previousEpisode?.content_tail ?? null,
+          });
 
-          if (hasBadOpening || hasBadTime) {
+          if (hasBadOpening || hasBadTime || hasBadInjury) {
             const reasons: string[] = [];
-            if (hasBadOpening) reasons.push("배경/분위기(어둠/추위 등)로 시작하는 오프닝");
-            if (hasBadTime) reasons.push("숫자 시각(오전/오후 N시, N시 N분, HH:MM) 직접 언급");
+            if (hasBadOpening)
+              reasons.push("배경/분위기(어둠/추위 등)로 시작하는 오프닝");
+            if (hasBadTime)
+              reasons.push(
+                "숫자 시각(오전/오후 N시, N시 N분, HH:MM) 직접 언급",
+              );
+            if (hasBadInjury)
+              reasons.push("직전 장면 근거 없는 새 부상/출혈/골절 등의 급작스런 도입");
 
             const instruction = [
               `오프닝/시간 규칙 위반: ${reasons.join(", ")}.`,
               "수정 지시:",
               "- 첫 문장은 반드시 인물의 행동/선택/대사로 시작하라. (배경/날씨/분위기 묘사로 시작 금지)",
-              "- 본문에서 숫자 시각 표기(오전/오후 N시, N시 N분, HH:MM)를 모두 제거하고, 상대 표현(잠시 후/몇 분 뒤/해가 기울 무렵)으로 바꿔라.",
+              "- 본문에서 숫자 시각 표기(오전/오후 N시, N시 N분, HH:MM)를 모두 제거하고, 상대 표현(잠시 후/얼마 후/어느새/주변이 더 어두워진 뒤)으로 바꿔라.",
+              "- 직전 장면에 없던 새 부상/출혈/골절 등을 첫 2문단에서 갑자기 도입하지 마라. 필요하면 직전 장면의 마지막 행동/공격에서 부상이 발생하는 과정을 먼저 이어서 써라.",
               "- 연속성 유지: 직전 장면 발췌의 즉시 결과에서 끊기지 않게 이어서 쓴다.",
               "- 새 설정/새 고유명사 추가 금지.",
             ].join("\n");
@@ -589,6 +590,9 @@ async function main(): Promise<void> {
                 episode_no: episodeNo,
                 status: "review_failed",
                 issues: [{ severity: "high", description: instruction }],
+                episode_content: content,
+                content_chars: content.length,
+                story_time: targetStoryTimeIso,
               });
               break;
             }
@@ -634,6 +638,9 @@ async function main(): Promise<void> {
               episode_no: episodeNo,
               status: "review_failed",
               issues: [{ severity: "high", description: instruction }],
+              episode_content: content,
+              content_chars: content.length,
+              story_time: targetStoryTimeIso,
             });
             break;
           }
@@ -672,58 +679,94 @@ async function main(): Promise<void> {
           novel_id: targetNovelId,
           episode_no: episodeNo,
           status: "review_failed",
-          issues: [{ severity: "high", description: "draft generation failed" }],
+          issues: [
+            { severity: "high", description: "draft generation failed" },
+          ],
+          ...(generated
+            ? {
+                episode_content: generated.episode_content,
+                content_chars: generated.episode_content.length,
+                story_time: targetStoryTimeIso,
+              }
+            : {}),
         });
         break;
       }
 
-      const continuity = await reviewEpisodeContinuity({
-        ai,
-        model: geminiModel,
-        previousEpisodes: [previous2Episode, previousEpisode].filter(
-          (e): e is NonNullable<typeof e> => Boolean(e),
-        ),
-        draft: draftWithTime,
-      });
-
-      if (!continuity.passed) {
-        logger.debug("episode.review", {
-          novelId: targetNovelId,
-          episodeNo,
-          attempt: reviewAttempt,
-          type: "continuity",
-          passed: false,
-          issues: continuity.issues.length,
+        if (enableContinuityReview) {
+          const continuity = await reviewEpisodeContinuity({
+          ai,
+          model: geminiModel,
+          previousEpisodes: [previous2Episode, previousEpisode].filter(
+            (e): e is NonNullable<typeof e> => Boolean(e),
+          ),
+          draft: draftWithTime,
         });
 
-        const instruction =
-          continuity.revision_instruction ??
-          continuity.issues
-            .map((i) => `- (${i.severity}) ${i.description}`)
-            .join("\n");
-
-        if (reviewAttempt === maxReviewAttempts) {
-          hadFailures = true;
-          reviewFailed = true;
-
-          logger.warn("episode.review.failed", {
+        if (!continuity.passed) {
+          logger.debug("episode.review", {
             novelId: targetNovelId,
             episodeNo,
-            issues: continuity.issues,
+            attempt: reviewAttempt,
+            type: "continuity",
+            passed: false,
+            issues: continuity.issues.length,
           });
 
-          results.push({
-            novel_id: targetNovelId,
-            episode_no: episodeNo,
-            status: "review_failed",
-            issues: continuity.issues,
-          });
+          const instruction =
+            (typeof continuity.revision_instruction === "string" &&
+            continuity.revision_instruction.trim().length > 0
+              ? continuity.revision_instruction.trim()
+              : (() => {
+                  const issues = continuity.issues
+                    .map((i) => `- (${i.severity}) ${i.description}`)
+                    .join("\n");
 
-          break;
+                  return [
+                    "연속성 검토에서 문제가 발견됐다. 아래 항목을 해결하도록 **최소 수정**으로 다시 작성하라.",
+                    "규칙:",
+                    "- 사건/대사/인물 구성은 최대한 유지하고, 필요한 연결 문장만 추가/교정한다.",
+                    "- 새 인물/새 고유명사/새 설정 추가 금지.",
+                    "- 첫 2문단은 직전 장면의 즉시 결과로 시작(장소/시간 점프 금지).",
+                    "문제 목록:",
+                    issues || "- (high) 연속성 문제",
+                  ].join("\n");
+                })());
+
+          if (reviewAttempt === maxReviewAttempts) {
+            hadFailures = true;
+            reviewFailed = true;
+
+            logger.warn("episode.review.failed", {
+              novelId: targetNovelId,
+              episodeNo,
+              issues: continuity.issues,
+            });
+
+            results.push({
+              novel_id: targetNovelId,
+              episode_no: episodeNo,
+              status: "review_failed",
+              issues: continuity.issues,
+              episode_content: draftWithTime.episode_content,
+              content_chars: draftWithTime.episode_content.length,
+              story_time: draftWithTime.story_time,
+            });
+
+            break;
+          }
+
+          reviewerRevisionInstruction = instruction;
+          continue;
         }
+      }
 
-        reviewerRevisionInstruction = instruction;
-        continue;
+      // Consistency review uses RAG + extra Gemini calls (facts extraction + embeddings) and can be re-enabled later.
+      const enableConsistencyReview = process.env.ENABLE_CONSISTENCY_REVIEW === "true";
+      if (!enableConsistencyReview) {
+        extractedFactsForPersist = [];
+        passedAllReviews = true;
+        break;
       }
 
       const facts = await extractEpisodeFacts({
@@ -881,6 +924,9 @@ async function main(): Promise<void> {
           episode_no: episodeNo,
           status: "review_failed",
           issues: consistency.issues,
+          episode_content: draftWithTime.episode_content,
+          content_chars: draftWithTime.episode_content.length,
+          story_time: draftWithTime.story_time,
         });
 
         break;
@@ -897,6 +943,13 @@ async function main(): Promise<void> {
         episode_no: episodeNo,
         status: "review_failed",
         issues: [{ severity: "high", description: "review loop exhausted" }],
+        ...(generated
+          ? {
+              episode_content: generated.episode_content,
+              content_chars: generated.episode_content.length,
+              story_time: targetStoryTimeIso,
+            }
+          : {}),
       });
     }
 
@@ -930,6 +983,9 @@ async function main(): Promise<void> {
         novel_id: targetNovelId,
         episode_no: episodeNo,
         status: "dry_run",
+        episode_content: generated.episode_content,
+        content_chars: generated.episode_content.length,
+        story_time: targetStoryTimeIso,
       });
       logger.debug("episode.dry_run", { novelId: targetNovelId, episodeNo });
       continue;
@@ -942,7 +998,10 @@ async function main(): Promise<void> {
       content: generated.episode_content,
     };
 
-    logger.debug("episode.persist.start", { novelId: targetNovelId, episodeNo });
+    logger.debug("episode.persist.start", {
+      novelId: targetNovelId,
+      episodeNo,
+    });
 
     const episode = await insertEpisode({
       supabase,
@@ -959,14 +1018,12 @@ async function main(): Promise<void> {
     });
 
     // Extract structured context and persist it for future episodes.
-    // This makes characters/locations/plot_seeds usable as canonical context.
-    const extractedEntities = await extractEpisodeEntities({
-      ai,
-      model: geminiModel,
-      storyBible,
-      prefetchedContext: writerPrefetchedContext,
-      episodeContent: generated.episode_content,
-    });
+    // Prefer entities returned from the writer response to avoid extra Gemini calls.
+    const extractedEntities = generated.entities ?? {
+      characters: [],
+      locations: [],
+      plot_seeds: [],
+    };
 
     // 모델이 캐릭터를 비워버리는 경우(특히 1인칭/이름 미공개 초반부)가 잦아서,
     // 최소 1개의 "이름 미공개 주인공" 캐릭터는 항상 남기도록 방어한다.
@@ -975,7 +1032,9 @@ async function main(): Promise<void> {
 
       const content = generated.episode_content;
       const hasFirstPerson =
-        content.includes("나는") || content.includes("내가") || content.includes("나 ");
+        content.includes("나는") ||
+        content.includes("내가") ||
+        content.includes("나 ");
 
       const descriptor = hasFirstPerson ? "화자(1인칭)" : "주인공(이름 미공개)";
       const excerpt = content.trim().slice(0, 240);
@@ -1001,23 +1060,31 @@ async function main(): Promise<void> {
     const looksLikeProtagonist = (descriptor: string | null): boolean => {
       const d = (descriptor ?? "").trim();
       if (!d) return false;
+
       return d.includes("화자") || d.includes("주인공") || d.includes("1인칭");
     };
 
     for (const c of entities.characters) {
       const name = typeof c.name === "string" ? c.name.trim() : null;
       const nameRevealed = Boolean(c.name_revealed && name);
-      const descriptor = typeof c.descriptor === "string" ? c.descriptor.trim() : null;
+      const descriptor =
+        typeof c.descriptor === "string" ? c.descriptor.trim() : null;
       const firstExcerpt =
-        typeof c.first_appearance_excerpt === "string" ? c.first_appearance_excerpt.trim() : null;
+        typeof c.first_appearance_excerpt === "string"
+          ? c.first_appearance_excerpt.trim()
+          : null;
       const nameEvidence =
-        typeof c.name_evidence_excerpt === "string" ? c.name_evidence_excerpt.trim() : null;
+        typeof c.name_evidence_excerpt === "string"
+          ? c.name_evidence_excerpt.trim()
+          : null;
 
       const saved = await upsertCharacter({
         supabase,
         args: {
           novel_id: targetNovelId,
-          ...(typeof c.id === "string" && c.id.trim() ? { id: c.id.trim() } : {}),
+          ...(typeof c.id === "string" && c.id.trim()
+            ? { id: c.id.trim() }
+            : {}),
           name: nameRevealed ? name : null,
           name_revealed: nameRevealed,
           ...(descriptor ? { descriptor } : {}),
@@ -1027,14 +1094,21 @@ async function main(): Promise<void> {
           ...(firstExcerpt ? { first_appearance_episode_id: episode.id } : {}),
           personality: c.personality,
           ...(typeof c.gender !== "undefined" ? { gender: c.gender } : {}),
-          ...(typeof c.birthday !== "undefined" ? { birthday: c.birthday } : {}),
+          ...(typeof c.birthday !== "undefined"
+            ? { birthday: c.birthday }
+            : {}),
         },
       });
 
       characterIds.add(saved.id);
-      if (typeof saved.name === "string" && saved.name.trim()) characterNames.add(saved.name.trim());
+      if (typeof saved.name === "string" && saved.name.trim())
+        characterNames.add(saved.name.trim());
 
-      if (!protagonistCharacterId && !saved.name && looksLikeProtagonist(descriptor)) {
+      if (
+        !protagonistCharacterId &&
+        !saved.name &&
+        looksLikeProtagonist(descriptor)
+      ) {
         protagonistCharacterId = saved.id;
       }
     }
@@ -1067,7 +1141,7 @@ async function main(): Promise<void> {
       // 해당 에피소드에서 생성된 주인공(이름 미공개) 캐릭터로 연결한다.
       if (protagonistCharacterId) {
         const compactSet = new Set(
-          rawPlotCharacterNames.map((n) => n.replaceAll(" ", ""))
+          rawPlotCharacterNames.map((n) => n.replaceAll(" ", "")),
         );
         const hasProtagonistAlias =
           compactSet.has("나") ||
@@ -1079,7 +1153,9 @@ async function main(): Promise<void> {
 
         const mentionsProtagonistInDetail =
           typeof p.detail === "string" &&
-          (p.detail.includes("주인공") || p.detail.includes("화자") || p.detail.includes("1인칭"));
+          (p.detail.includes("주인공") ||
+            p.detail.includes("화자") ||
+            p.detail.includes("1인칭"));
 
         // 캐릭터 연결 정보가 비어있지만, 설명상 주인공 중심 떡밥이면 주인공으로 연결한다.
         if (
@@ -1094,7 +1170,7 @@ async function main(): Promise<void> {
       const character_ids_deduped = Array.from(new Set(character_ids));
 
       const character_names = rawPlotCharacterNames.filter(
-        (n) => n.length > 0 && characterNames.has(n)
+        (n) => n.length > 0 && characterNames.has(n),
       );
       const location_names = (p.location_names ?? [])
         .map((n) => n.trim())
@@ -1107,7 +1183,9 @@ async function main(): Promise<void> {
           title: p.title,
           detail: p.detail,
           introduced_in_episode_id: episode.id,
-          ...(character_ids_deduped.length > 0 ? { character_ids: character_ids_deduped } : {}),
+          ...(character_ids_deduped.length > 0
+            ? { character_ids: character_ids_deduped }
+            : {}),
           ...(character_names.length > 0 ? { character_names } : {}),
           ...(location_names.length > 0 ? { location_names } : {}),
         },
@@ -1129,41 +1207,46 @@ async function main(): Promise<void> {
       plotSeedIds: tool.getCreatedPlotSeedIds(),
     });
 
-    await indexEpisodeSummary({
-      supabase,
-      novelId: targetNovelId,
-      episodeId: episode.id,
-      episodeNo,
-      episodeContent: generated.episode_content,
-      geminiApiKey,
-      geminiEmbeddingModel,
-      ragEmbeddingModelId,
-    });
-
-    const facts =
-      extractedFactsForPersist ??
-      (await extractEpisodeFacts({
-        ai,
-        model: geminiModel,
+    // TEMP: Disable embedding-based indexing by default to reduce Gemini embed call volume (429).
+    // Re-enable by setting ENABLE_EPISODE_INDEXING=true.
+    const enableEpisodeIndexing = process.env.ENABLE_EPISODE_INDEXING === "true";
+    if (enableEpisodeIndexing) {
+      await indexEpisodeSummary({
+        supabase,
+        novelId: targetNovelId,
+        episodeId: episode.id,
+        episodeNo,
         episodeContent: generated.episode_content,
-      }));
+        geminiApiKey,
+        geminiEmbeddingModel,
+        ragEmbeddingModelId,
+      });
 
-    await indexEpisodeFacts({
-      supabase,
-      novelId: targetNovelId,
-      episodeId: episode.id,
-      episodeNo,
-      facts,
-      geminiApiKey,
-      geminiEmbeddingModel,
-      ragEmbeddingModelId,
-    });
+      const facts =
+        extractedFactsForPersist ??
+        (await extractEpisodeFacts({
+          ai,
+          model: geminiModel,
+          episodeContent: generated.episode_content,
+        }));
 
-    logger.debug("episode.persist.indexed", {
-      novelId: targetNovelId,
-      episodeNo,
-      episodeId: episode.id,
-    });
+      await indexEpisodeFacts({
+        supabase,
+        novelId: targetNovelId,
+        episodeId: episode.id,
+        episodeNo,
+        facts,
+        geminiApiKey,
+        geminiEmbeddingModel,
+        ragEmbeddingModelId,
+      });
+
+      logger.debug("episode.persist.indexed", {
+        novelId: targetNovelId,
+        episodeNo,
+        episodeId: episode.id,
+      });
+    }
 
     await resolvePlotSeeds({
       supabase,

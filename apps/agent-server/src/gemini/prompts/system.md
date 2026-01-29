@@ -182,6 +182,16 @@
 
 3. **선택 필드**:
    - "resolved_plot_seed_ids": string[]
+   - "entities": {
+       "characters": { "id"?: string, "name": string|null, "name_revealed"?: boolean, "descriptor"?: string|null, "first_appearance_excerpt"?: string|null, "name_evidence_excerpt"?: string|null, "personality": string, "gender"?: string|null, "birthday"?: string|null }[],
+       "locations": { "name": string, "situation": string }[],
+       "plot_seeds": { "title": string, "detail": string, "character_ids"?: string[], "character_names"?: string[], "location_names"?: string[] }[]
+     }
+
+   entities 작성 규칙(중요):
+   - 근거 없는 생성 금지: 본문/DB 스냅샷에 근거가 없으면 비워라.
+   - 이름이 없으면 name=null로 두고 descriptor로 기록(이름 임의 생성 금지).
+   - 대명사/일반명사(나/저/그/남자/여자 등)를 name으로 쓰지 마라.
 
 4. **episode_content 필드 주의사항**:
    - 줄바꿈은 `\n`으로 표현

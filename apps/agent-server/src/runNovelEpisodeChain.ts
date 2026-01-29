@@ -343,6 +343,8 @@ async function main(): Promise<void> {
 
   const maxTiktaka = toPositiveInt(args.maxTiktaka, 2);
   const cleanStart = toBoolean(args.cleanStart, false);
+  const cleanOnFailure = toBoolean(args.cleanOnFailure, false);
+  const cleanOnly = toBoolean(args.cleanOnly, false);
   const storyTimeStepMinutes = toPositiveInt(args.storyTimeStepMinutes, 5);
   const startStoryTimeIso =
     typeof args.startStoryTimeIso === "string" && args.startStoryTimeIso.trim()
@@ -373,11 +375,56 @@ async function main(): Promise<void> {
       details: { novelId },
     });
 
-  if (cleanStart) {
+  if (cleanStart || cleanOnly) {
     console.error(
-      "[chain] cleanStart=true: deleting novel data except novels...",
+      `[chain] ${cleanOnly ? "cleanOnly" : "cleanStart"}=true: deleting novel data except novels...`,
     );
     await deleteNovelDataExceptNovels({ supabase, novelId });
+  }
+
+  if (cleanOnly) {
+    const counts = {
+      episodes: await countByNovelId({
+        supabase,
+        table: "episodes",
+        novelId,
+      }),
+      episode_chunks: await countByNovelId({
+        supabase,
+        table: "episode_chunks",
+        novelId,
+      }),
+      characters: await countByNovelId({
+        supabase,
+        table: "characters",
+        novelId,
+      }),
+      locations: await countByNovelId({
+        supabase,
+        table: "locations",
+        novelId,
+      }),
+      plot_seeds: await countByNovelId({
+        supabase,
+        table: "plot_seeds",
+        novelId,
+      }),
+      ...(await countPlotSeedJoins({ supabase, novelId })),
+    };
+
+    console.info(
+      JSON.stringify(
+        {
+          ok: true,
+          novel: { id: novelRow.id, title: novelRow.title },
+          cleaned: true,
+          counts,
+        },
+        null,
+        2,
+      ),
+    );
+    return;
   }
 
   const episodeNosBefore = await getEpisodeNos({ supabase, novelId });
@@ -408,6 +455,15 @@ async function main(): Promise<void> {
   const issues = first?.issues;
 
   if (!run.ok || status !== "ok" || typeof episodeNo !== "number") {
+    // When a generation attempt fails due to review/quality, we often want to restart from episode 1.
+    // This option deletes ALL novel-scoped data (including episode 1) so the next run can start clean.
+    if (cleanOnFailure && status === "review_failed") {
+      console.error(
+        "[chain] cleanOnFailure=true & status=review_failed: deleting novel data except novels...",
+      );
+      await deleteNovelDataExceptNovels({ supabase, novelId });
+    }
+
     if (issues) {
       const serialized = (() => {
         try {

@@ -6,7 +6,12 @@
 스키마:
 {
   "episode_content": string,
-  "resolved_plot_seed_ids"?: string[]
+  "resolved_plot_seed_ids"?: string[],
+  "entities"?: {
+    "characters": any[],
+    "locations": any[],
+    "plot_seeds": any[]
+  }
 }
 
 {{issues}}
