@@ -23,6 +23,7 @@ import {
   generateEpisodeWithTools,
   reviewEpisodeConsistency,
   reviewEpisodeContinuity,
+  reviewEpisodeRubric,
 } from "./gemini/index";
 import { parseArgs, toBoolean } from "./lib/args";
 import { createLogger } from "./lib/logger";
@@ -154,6 +155,151 @@ async function main(): Promise<void> {
     });
     const maxEpisodeNo = episodeNo - 1;
 
+    let runId: string | null = null;
+    let draftAttemptNo = 0;
+    let lastDraftAttemptNo: number | null = null;
+
+    const updateDraftAttempt = async (args: {
+      attemptNo: number;
+      draft_status: string;
+      review_json?: TablesInsert<"episode_drafts">["review_json"];
+      revision_instruction?: string | null;
+    }): Promise<void> => {
+      if (!runId) return;
+      const { error } = await supabase
+        .from("episode_drafts")
+        .update({
+          draft_status: args.draft_status,
+          ...(typeof args.review_json !== "undefined"
+            ? { review_json: args.review_json }
+            : {}),
+          ...(typeof args.revision_instruction !== "undefined"
+            ? { revision_instruction: args.revision_instruction }
+            : {}),
+        })
+        .eq("run_id", runId)
+        .eq("episode_no", episodeNo)
+        .eq("attempt_no", args.attemptNo);
+
+      if (error)
+        throw new AgentError({
+          type: "DATABASE_ERROR",
+          code: "QUERY_FAILED",
+          message: `update draft attempt: ${error.message}`,
+          details: {
+            table: "episode_drafts",
+            op: "update",
+            attempt_no: args.attemptNo,
+          },
+          retryable: true,
+        });
+
+    };
+
+    const insertDraftAttempt = async (
+      draftText: string,
+    ): Promise<number | null> => {
+      if (!runId) return null;
+      const attemptNo = (draftAttemptNo += 1);
+
+      const draftPayload: TablesInsert<"episode_drafts"> = {
+        run_id: runId,
+        novel_id: targetNovelId,
+        episode_no: episodeNo,
+        attempt_no: attemptNo,
+        draft_text: draftText,
+        draft_status: "generated",
+      };
+
+      const { error } = await supabase
+        .from("episode_drafts")
+        .insert(draftPayload);
+
+      if (error)
+        throw new AgentError({
+          type: "DATABASE_ERROR",
+          code: "QUERY_FAILED",
+          message: `insert episode draft: ${error.message}`,
+          details: {
+            table: "episode_drafts",
+            op: "insert",
+            attempt_no: attemptNo,
+          },
+          retryable: true,
+        });
+
+      lastDraftAttemptNo = attemptNo;
+
+      return attemptNo;
+    };
+
+    const updateGenerationRun = async (args: {
+      status: "running" | "failed" | "completed";
+      failure_reason?: string | null;
+    }): Promise<void> => {
+      if (!runId) return;
+      const { error } = await supabase
+        .from("generation_runs")
+        .update({
+          status: args.status,
+          attempt_no: draftAttemptNo,
+          current_episode_no: episodeNo,
+          ...(typeof args.failure_reason !== "undefined"
+            ? { failure_reason: args.failure_reason }
+            : {}),
+        })
+        .eq("id", runId);
+
+      if (error)
+        throw new AgentError({
+          type: "DATABASE_ERROR",
+          code: "QUERY_FAILED",
+          message: `update generation run: ${error.message}`,
+          details: {
+            table: "generation_runs",
+            op: "update",
+            run_id: runId,
+          },
+          retryable: true,
+        });
+    };
+
+    if (!dryRun) {
+      const runPayload: TablesInsert<"generation_runs"> = {
+        novel_id: targetNovelId,
+        status: "running",
+        current_episode_no: episodeNo,
+        attempt_no: 0,
+        target_episode_count: 1,
+      };
+
+      const { data: runRow, error: runError } = await supabase
+        .from("generation_runs")
+        .insert(runPayload)
+        .select("id")
+        .single();
+
+      if (runError)
+        throw new AgentError({
+          type: "DATABASE_ERROR",
+          code: "QUERY_FAILED",
+          message: `insert generation run: ${runError.message}`,
+          details: { table: "generation_runs", op: "insert" },
+          retryable: true,
+        });
+
+      if (!runRow?.id)
+        throw new AgentError({
+          type: "DATABASE_ERROR",
+          code: "QUERY_FAILED",
+          message: "generation run insert returned no id",
+          details: { table: "generation_runs", op: "insert" },
+          retryable: true,
+        });
+
+      runId = runRow.id;
+    }
+
     const previousEpisode =
           maxEpisodeNo >= 1
           ? await getPreviousEpisodeForPrompt({
@@ -199,7 +345,7 @@ async function main(): Promise<void> {
 
     const { data: novelRows, error: novelLoadError } = await supabase
       .from("novels")
-      .select("title,genre,story_bible")
+      .select("title,genre,story_bible,append_prompt")
       .eq("id", targetNovelId)
       .limit(1);
 
@@ -207,19 +353,32 @@ async function main(): Promise<void> {
       throw new AgentError({
         type: "DATABASE_ERROR",
         code: "QUERY_FAILED",
-        message: `load novel story_bible: ${novelLoadError.message}`,
-        details: { table: "novels", op: "select_story_bible" },
+        message: `load novel context: ${novelLoadError.message}`,
+        details: { table: "novels", op: "select_story_context" },
         retryable: true,
       });
 
+    const novelRow = (novelRows?.[0] ?? null) as
+      | {
+          title?: string | null;
+          genre?: string | null;
+          story_bible?: string | null;
+          append_prompt?: string | null;
+        }
+      | null;
+
     const storyBibleRaw =
-      typeof novelRows?.[0]?.story_bible === "string"
-        ? novelRows[0].story_bible
-        : "";
+      typeof novelRow?.story_bible === "string" ? novelRow.story_bible : "";
+    const appendPromptRaw =
+      typeof novelRow?.append_prompt === "string" ? novelRow.append_prompt : "";
     const storyBible = storyBibleRaw.trim().slice(0, 6000);
     const writerStoryBible = disableWriterTools
       ? storyBible.trim().slice(0, 2500)
       : storyBible;
+    const appendPrompt = appendPromptRaw.trim().slice(0, 3000);
+    const writerAppendPrompt = disableWriterTools
+      ? appendPrompt.trim().slice(0, 1500)
+      : appendPrompt;
 
     const parseLengthRange = (
       text: string,
@@ -281,65 +440,6 @@ async function main(): Promise<void> {
       return "늦은 밤";
     })();
 
-    const startsWithAtmosphere = (text: string): boolean => {
-      const start = text.trimStart().slice(0, 40);
-
-      // Keep this list generic (works across novels) and only for *opening* detection.
-      return /^(어둠|침묵|정적|바람|추위|밤|새벽|눈|비)(이|가|은|는)?\b/.test(
-        start,
-      );
-    };
-
-    const hasExplicitClockTime = (text: string): boolean => {
-      // Ban explicit clock time mentions in content (story_time is persisted separately).
-      // - 오후 6시 / 오후 6시 17분
-      // - 6시 17분
-      // - 18:30
-      return (
-        /(오전|오후)\s*\d{1,2}\s*시(\s*\d{1,2}\s*분)?/.test(text) ||
-        /\b\d{1,2}\s*시\s*\d{1,2}\s*분\b/.test(text) ||
-        /\b\d{1,2}:\d{2}\b/.test(text)
-      );
-    };
-
-    const hasUnearnedInjuryInOpening = (params: {
-      content: string;
-      previousTail: string | null;
-    }): boolean => {
-      // Episode 1 has no previous tail; allow injuries if they are earned in-scene.
-      if (maxEpisodeNo < 1) return false;
-
-      const firstTwoParagraphs = params.content
-        .split(/\n\s*\n/)
-        .slice(0, 2)
-        .join("\n\n")
-        .trim();
-      if (!firstTwoParagraphs) return false;
-
-      // Generic lexicon to catch sudden injuries introduced in the opening.
-      // We only block if the same keyword did NOT appear in previousTail.
-      const injuryKeywords = [
-        "부상",
-        "상처",
-        "출혈",
-        "피",
-        "피투성이",
-        "골절",
-        "부러",
-        "찢어",
-        "찢긴",
-        "옆구리",
-        "복부",
-        "갈비",
-      ];
-
-      const hasInjury = injuryKeywords.some((k) => firstTwoParagraphs.includes(k));
-      if (!hasInjury) return false;
-
-      const previousTail = params.previousTail ?? "";
-      const hadInjuryBefore = injuryKeywords.some((k) => previousTail.includes(k));
-      return !hadInjuryBefore;
-    };
 
     const guardrails = (maxEpisodeNo < 1
       ? [
@@ -361,10 +461,8 @@ async function main(): Promise<void> {
         ]
     ).join("\n");
 
-    const novelTitle =
-      typeof novelRows?.[0]?.title === "string" ? novelRows[0].title : "";
-    const novelGenre =
-      typeof novelRows?.[0]?.genre === "string" ? novelRows[0].genre : "";
+    const novelTitle = typeof novelRow?.title === "string" ? novelRow.title : "";
+    const novelGenre = typeof novelRow?.genre === "string" ? novelRow.genre : "";
 
     const prefetched = disableWriterTools
       ? await (async () => {
@@ -438,6 +536,11 @@ async function main(): Promise<void> {
           lines.push("---");
 
           lines.push("");
+          lines.push("[append_prompt]\n---");
+          lines.push(writerAppendPrompt || "(없음)");
+          lines.push("---");
+
+          lines.push("");
           lines.push("[characters]");
           lines.push(
             prefetched && prefetched.characters.length > 0
@@ -470,6 +573,7 @@ async function main(): Promise<void> {
       episodeNo,
       maxEpisodeNo,
       storyBibleChars: storyBible.length,
+      appendPromptChars: appendPrompt.length,
       hasPreviousEpisode: Boolean(previousEpisode),
       hasPrevious2Episode: Boolean(previous2Episode),
     });
@@ -505,6 +609,7 @@ async function main(): Promise<void> {
       process.env.ENABLE_CONTINUITY_REVIEW !== "false";
 
     let reviewerRevisionInstruction: string | undefined;
+    let pendingWriterRevisionInstruction: string | undefined;
     let passedAllReviews = false;
 
     for (
@@ -512,7 +617,8 @@ async function main(): Promise<void> {
       reviewAttempt <= maxReviewAttempts;
       reviewAttempt++
     ) {
-      let writerRevisionInstruction: string | undefined;
+      let writerRevisionInstruction = pendingWriterRevisionInstruction;
+      pendingWriterRevisionInstruction = undefined;
       let writerMaxOutputTokens = maxOutputTokensBase;
 
       let draftWithTime: {
@@ -549,58 +655,7 @@ async function main(): Promise<void> {
         });
 
         const content = generated.episode_content;
-
-        // Avoid cliché "atmosphere-first" openings and explicit clock times.
-        // If violated, request a rewrite while keeping continuity.
-        {
-          const trimmed = content.trimStart();
-          const hasBadOpening = startsWithAtmosphere(trimmed);
-          const hasBadTime = hasExplicitClockTime(content);
-          const hasBadInjury = hasUnearnedInjuryInOpening({
-            content,
-            previousTail: previousEpisode?.content_tail ?? null,
-          });
-
-          if (hasBadOpening || hasBadTime || hasBadInjury) {
-            const reasons: string[] = [];
-            if (hasBadOpening)
-              reasons.push("배경/분위기(어둠/추위 등)로 시작하는 오프닝");
-            if (hasBadTime)
-              reasons.push(
-                "숫자 시각(오전/오후 N시, N시 N분, HH:MM) 직접 언급",
-              );
-            if (hasBadInjury)
-              reasons.push("직전 장면 근거 없는 새 부상/출혈/골절 등의 급작스런 도입");
-
-            const instruction = [
-              `오프닝/시간 규칙 위반: ${reasons.join(", ")}.`,
-              "수정 지시:",
-              "- 첫 문장은 반드시 인물의 행동/선택/대사로 시작하라. (배경/날씨/분위기 묘사로 시작 금지)",
-              "- 본문에서 숫자 시각 표기(오전/오후 N시, N시 N분, HH:MM)를 모두 제거하고, 상대 표현(잠시 후/얼마 후/어느새/주변이 더 어두워진 뒤)으로 바꿔라.",
-              "- 직전 장면에 없던 새 부상/출혈/골절 등을 첫 2문단에서 갑자기 도입하지 마라. 필요하면 직전 장면의 마지막 행동/공격에서 부상이 발생하는 과정을 먼저 이어서 써라.",
-              "- 연속성 유지: 직전 장면 발췌의 즉시 결과에서 끊기지 않게 이어서 쓴다.",
-              "- 새 설정/새 고유명사 추가 금지.",
-            ].join("\n");
-
-            if (writerAttempt === maxWriterAttempts) {
-              hadFailures = true;
-              reviewFailed = true;
-              results.push({
-                novel_id: targetNovelId,
-                episode_no: episodeNo,
-                status: "review_failed",
-                issues: [{ severity: "high", description: instruction }],
-                episode_content: content,
-                content_chars: content.length,
-                story_time: targetStoryTimeIso,
-              });
-              break;
-            }
-
-            writerRevisionInstruction = instruction;
-            continue;
-          }
-        }
+        const draftAttemptNoLocal = await insertDraftAttempt(content);
 
         const chars = content.length;
         if (chars < lengthRange.min || chars > lengthRange.max) {
@@ -631,6 +686,12 @@ async function main(): Promise<void> {
                   "- 기존 사건의 연속성을 유지하고, 새 설정/새 인물/새 고유명사 추가 금지.",
                 ].join("\n");
           if (writerAttempt === maxWriterAttempts) {
+            if (draftAttemptNoLocal)
+              await updateDraftAttempt({
+                attemptNo: draftAttemptNoLocal,
+                draft_status: "abandoned",
+                revision_instruction: instruction,
+              });
             hadFailures = true;
             reviewFailed = true;
             results.push({
@@ -663,6 +724,12 @@ async function main(): Promise<void> {
             writerMaxOutputTokens = Math.max(writerMaxOutputTokens - 180, 256);
           }
 
+          if (draftAttemptNoLocal)
+            await updateDraftAttempt({
+              attemptNo: draftAttemptNoLocal,
+              draft_status: "needs_revision",
+              revision_instruction: instruction,
+            });
           writerRevisionInstruction = rewriteInstruction;
           continue;
         }
@@ -693,8 +760,8 @@ async function main(): Promise<void> {
         break;
       }
 
-        if (enableContinuityReview) {
-          const continuity = await reviewEpisodeContinuity({
+      if (enableContinuityReview) {
+        const continuity = await reviewEpisodeContinuity({
           ai,
           model: geminiModel,
           previousEpisodes: [previous2Episode, previousEpisode].filter(
@@ -734,6 +801,12 @@ async function main(): Promise<void> {
                 })());
 
           if (reviewAttempt === maxReviewAttempts) {
+            if (lastDraftAttemptNo)
+              await updateDraftAttempt({
+                attemptNo: lastDraftAttemptNo,
+                draft_status: "abandoned",
+                revision_instruction: instruction,
+              });
             hadFailures = true;
             reviewFailed = true;
 
@@ -756,14 +829,105 @@ async function main(): Promise<void> {
             break;
           }
 
+          if (lastDraftAttemptNo)
+            await updateDraftAttempt({
+              attemptNo: lastDraftAttemptNo,
+              draft_status: "needs_revision",
+              revision_instruction: instruction,
+            });
           reviewerRevisionInstruction = instruction;
           continue;
         }
       }
 
+      const rubric = await reviewEpisodeRubric({
+        ai,
+        model: geminiModel,
+        storyBible,
+        appendPrompt,
+        previousEpisodes: [previous2Episode, previousEpisode].filter(
+          (e): e is NonNullable<typeof e> => Boolean(e),
+        ),
+        draft: draftWithTime,
+      });
+
+      if (!rubric.passed) {
+        logger.debug("episode.review", {
+          novelId: targetNovelId,
+          episodeNo,
+          attempt: reviewAttempt,
+          type: "rubric",
+          passed: false,
+          issues: rubric.issues.length,
+          scores: rubric.scores,
+        });
+
+        const instruction =
+          rubric.revision_instruction ??
+          rubric.issues
+            .map(
+              (issue) =>
+                `- (${issue.severity}) ${issue.description}\n  증거: ${issue.evidence_quote}`,
+            )
+            .join("\n");
+
+        if (reviewAttempt === maxReviewAttempts) {
+          if (lastDraftAttemptNo)
+            await updateDraftAttempt({
+              attemptNo: lastDraftAttemptNo,
+              draft_status: "abandoned",
+              review_json: rubric,
+              revision_instruction: instruction,
+            });
+          hadFailures = true;
+          reviewFailed = true;
+
+          logger.warn("episode.review.failed", {
+            novelId: targetNovelId,
+            episodeNo,
+            issues: rubric.issues,
+            scores: rubric.scores,
+          });
+
+          results.push({
+            novel_id: targetNovelId,
+            episode_no: episodeNo,
+            status: "review_failed",
+            issues: [
+              {
+                severity: "high",
+                description: "rubric review failed",
+                rubric,
+              },
+            ],
+            episode_content: draftWithTime.episode_content,
+            content_chars: draftWithTime.episode_content.length,
+            story_time: draftWithTime.story_time,
+          });
+
+          break;
+        }
+
+        if (lastDraftAttemptNo)
+          await updateDraftAttempt({
+            attemptNo: lastDraftAttemptNo,
+            draft_status: "needs_revision",
+            review_json: rubric,
+            revision_instruction: instruction,
+          });
+        pendingWriterRevisionInstruction = instruction;
+        continue;
+      }
+
       // Consistency review uses RAG + extra Gemini calls (facts extraction + embeddings) and can be re-enabled later.
       const enableConsistencyReview = process.env.ENABLE_CONSISTENCY_REVIEW === "true";
       if (!enableConsistencyReview) {
+        if (lastDraftAttemptNo)
+          await updateDraftAttempt({
+            attemptNo: lastDraftAttemptNo,
+            draft_status: "approved",
+            review_json: rubric,
+          });
         extractedFactsForPersist = [];
         passedAllReviews = true;
         break;
@@ -861,6 +1025,7 @@ async function main(): Promise<void> {
         ai,
         model: geminiModel,
         storyBible,
+        appendPrompt,
         previousEpisodes: [previous2Episode, previousEpisode].filter(
           (e): e is NonNullable<typeof e> => Boolean(e),
         ),
@@ -885,6 +1050,12 @@ async function main(): Promise<void> {
         });
 
         extractedFactsForPersist = facts;
+        if (lastDraftAttemptNo)
+          await updateDraftAttempt({
+            attemptNo: lastDraftAttemptNo,
+            draft_status: "approved",
+            review_json: rubric,
+          });
         passedAllReviews = true;
         break;
       }
@@ -910,6 +1081,13 @@ async function main(): Promise<void> {
           .join("\n");
 
       if (reviewAttempt === maxReviewAttempts) {
+        if (lastDraftAttemptNo)
+          await updateDraftAttempt({
+            attemptNo: lastDraftAttemptNo,
+            draft_status: "abandoned",
+            review_json: rubric,
+            revision_instruction: instruction,
+          });
         hadFailures = true;
         reviewFailed = true;
 
@@ -932,6 +1110,13 @@ async function main(): Promise<void> {
         break;
       }
 
+      if (lastDraftAttemptNo)
+        await updateDraftAttempt({
+          attemptNo: lastDraftAttemptNo,
+          draft_status: "needs_revision",
+          review_json: rubric,
+          revision_instruction: instruction,
+        });
       reviewerRevisionInstruction = instruction;
     }
 
@@ -954,6 +1139,10 @@ async function main(): Promise<void> {
     }
 
     if (reviewFailed) {
+      await updateGenerationRun({
+        status: "failed",
+        failure_reason: "review_failed",
+      });
       logger.debug("novel.done", { novelId: targetNovelId, episodeNo });
       continue;
     }
@@ -1269,6 +1458,8 @@ async function main(): Promise<void> {
       episode_id: episode.id,
       status: "ok",
     });
+
+    await updateGenerationRun({ status: "completed" });
 
     logger.debug("novel.done", { novelId: targetNovelId, episodeNo });
   }

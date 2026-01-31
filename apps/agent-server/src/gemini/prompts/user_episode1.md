@@ -13,7 +13,7 @@
 - (메타 금지) 회차 번호/회차 라벨(예: 1회차, 1화, 지난 회차) 언급은 금지다.
 - (분량) 상위 컨텍스트(수정 지시)에 주어진 분량 범위는 **하드 제한**이다. 반드시 범위 안으로 맞춰라.
 
-필수: Supabase에서 `novels.story_bible`을 확인하고, 그 규칙/톤/세계관을 절대적으로 따른다.
+필수: Supabase에서 `novels.story_bible`과 `novels.append_prompt`를 확인하고, story_bible을 최우선으로 준수하되 append_prompt 지시를 추가로 따른다.
 
 JSON만 출력.
 

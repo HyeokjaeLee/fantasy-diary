@@ -43,7 +43,7 @@ export function createGeminiSupabaseCallableTool(params: {
     {
       name: "db_select",
       description:
-        "Read-only select from Supabase. Use this to load novel state (novels/characters/locations/plot_seeds/episodes). Note: novels has 'title' column (not 'name').",
+        "Read-only select from Supabase. Use this to load novel state (novels/characters/locations/plot_seeds/episodes). Note: novels has 'title' column (not 'name') and 'append_prompt' for extra tuning.",
       parameters: {
         type: Type.OBJECT,
         properties: {

@@ -617,24 +617,6 @@ export async function geminiEmbedText(params: {
   return numbers;
 }
 
-function containsEpisodeMeta(text: string): boolean {
-  const normalized = text.replaceAll(" ", "");
-
-  const patterns: RegExp[] = [
-    /\d+회차/,
-    /\d+화/,
-    /지난회차/,
-    /이전회차/,
-    /전회차/,
-    /지난화/,
-    /이전화/,
-    /전편/,
-    /이전편/,
-  ];
-
-  return patterns.some((p) => p.test(normalized));
-}
-
 function getErrorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
 
@@ -1141,18 +1123,7 @@ export async function generateEpisodeWithTools(params: {
       }
     }
 
-    if (!containsEpisodeMeta(generated.episode_content)) return generated;
-
-    lastEpisodeContent = generated.episode_content;
-
-    if (attempt === 2)
-      throw new AgentError({
-        type: "VALIDATION_ERROR",
-        code: "INVALID_ARGUMENT",
-        message: "Generated episode contains episode-label meta references",
-        hint: "Rewrite to avoid referencing previous episode numbers or '지난 화'.",
-        details: { rule: "no_episode_meta" },
-      });
+    return generated;
   }
 
   throw new AgentError({
@@ -1578,6 +1549,68 @@ const ReviewResultSchema = z
   })
   .strict();
 
+function normalizeRubricSeverity(
+  value: string,
+): "blocker" | "major" | "minor" {
+  const v = value.trim().toLowerCase();
+  if (
+    v === "blocker" ||
+    v === "critical" ||
+    v === "fatal" ||
+    v === "stop"
+  )
+    return "blocker";
+  if (v === "major" || v === "high" || v === "severe") return "major";
+  if (v === "minor" || v === "low" || v === "trivial") return "minor";
+
+  return "major";
+}
+
+const RubricIssueSchema = z
+  .object({
+    severity: z.string().transform((v) => normalizeRubricSeverity(v)),
+    description: z.string().transform((v) => v.trim()),
+    evidence_quote: z.string().transform((v) => v.trim()),
+  })
+  .strict()
+  .refine((issue) => issue.description.length > 0, {
+    message: "rubric issue description required",
+  })
+  .refine((issue) => issue.evidence_quote.length > 0, {
+    message: "rubric evidence_quote required",
+  });
+
+const RubricScoresSchema = z
+  .object({
+    continuity: z.number().min(0).max(5),
+    prose_quality: z.number().min(0).max(5),
+    pacing: z.number().min(0).max(5),
+    plot_progress: z.number().min(0).max(5),
+    character_integrity: z.number().min(0).max(5),
+    story_bible_compliance: z.number().min(0).max(5),
+    append_prompt_compliance: z.number().min(0).max(5),
+  })
+  .strict();
+
+type RubricReviewResult = {
+  passed: boolean;
+  scores: z.infer<typeof RubricScoresSchema>;
+  issues: Array<z.infer<typeof RubricIssueSchema>>;
+  revision_instruction?: string;
+};
+
+const RubricReviewResultSchema = z
+  .object({
+    passed: z.boolean(),
+    scores: RubricScoresSchema,
+    issues: z.array(RubricIssueSchema).default([]),
+    revision_instruction: z
+      .string()
+      .transform((v) => v.trim())
+      .optional(),
+  })
+  .strict();
+
 export async function reviewEpisodeContinuity(params: {
   ai: GoogleGenAI;
   model: string;
@@ -1705,6 +1738,7 @@ export async function reviewEpisodeConsistency(params: {
   ai: GoogleGenAI;
   model: string;
   storyBible?: string;
+  appendPrompt?: string;
   previousEpisodes: Array<{
     episode_no: number;
     story_time: string | null;
@@ -1746,10 +1780,11 @@ export async function reviewEpisodeConsistency(params: {
 
   const extractedFacts = params.extractedFacts.map((f) => `- ${f}`).join("\n");
   const storyBible = (params.storyBible ?? "").trim();
+  const appendPrompt = (params.appendPrompt ?? "").trim();
 
   const systemInstruction = [
     "너는 연재 소설의 설정/사실 충돌 검토자다. 너의 임무는 '검토'이며, 새 내용을 창작하지 않는다.",
-    "입력: (1) 직전 1~2개 에피소드 발췌, (2) 과거 에피소드에서 검색된 근거(요약/사실 청크), (3) 이번 에피소드 초안, (4) 이번 에피소드에서 추출된 사실 목록, (5) (선택) story_bible.",
+    "입력: (1) 직전 1~2개 에피소드 발췌, (2) 과거 에피소드에서 검색된 근거(요약/사실 청크), (3) 이번 에피소드 초안, (4) 이번 에피소드에서 추출된 사실 목록, (5) (선택) story_bible, (6) (선택) append_prompt.",
     "출력: 오직 JSON 객체 1개만 (마크다운/설명문/코드블록 금지).",
     "JSON 스키마:",
     "- passed: boolean",
@@ -1764,8 +1799,9 @@ export async function reviewEpisodeConsistency(params: {
     "검토 체크리스트:",
     "1) 이번 에피소드 추출 사실(extracted facts)이 과거 근거(grounding)와 직접 충돌하는가?",
     "2) story_bible이 제공된 경우, story_bible의 규칙/설정/세계관과 모순되는가?",
-    "3) 시간/장소/인물 상태(부상/소지품/관계/목표)가 근거 없이 바뀌는가?",
-    "4) 모호한 표현으로 인해 사실 해석이 갈리는 경우, 충돌 가능성을 낮추도록 문장을 명확히 하라고 지시할 것.",
+    "3) append_prompt가 제공된 경우, story_bible을 해치지 않는 범위에서 append_prompt 지시를 위반하는가?",
+    "4) 시간/장소/인물 상태(부상/소지품/관계/목표)가 근거 없이 바뀌는가?",
+    "5) 모호한 표현으로 인해 사실 해석이 갈리는 경우, 충돌 가능성을 낮추도록 문장을 명확히 하라고 지시할 것.",
     "revision_instruction 작성 가이드:",
     "- 충돌을 해결하는 최소 수정(문장 교정/추가 설명/장면 삽입)으로 지시.",
     "- 불확실하면 '근거 문장(과거 사실)을 존중'하도록 수정 지시.",
@@ -1810,6 +1846,9 @@ export async function reviewEpisodeConsistency(params: {
     storyBible
       ? "[story_bible]\n---\n" + storyBible + "\n---"
       : "[story_bible]\n(없음)",
+    appendPrompt
+      ? "\n[append_prompt]\n---\n" + appendPrompt + "\n---"
+      : "\n[append_prompt]\n(없음)",
     "\n[직전 에피소드 발췌]",
     previous || "(없음)",
     "\n[과거 근거(검색 결과)]",
@@ -1854,10 +1893,185 @@ export async function reviewEpisodeConsistency(params: {
   };
 }
 
+export async function reviewEpisodeRubric(params: {
+  ai: GoogleGenAI;
+  model: string;
+  storyBible?: string;
+  appendPrompt?: string;
+  previousEpisodes: Array<{
+    episode_no: number;
+    story_time: string | null;
+    content_tail: string;
+  }>;
+  draft: EpisodeDraft;
+}): Promise<RubricReviewResult> {
+  const previous = params.previousEpisodes
+    .slice()
+    .sort((a, b) => a.episode_no - b.episode_no)
+    .map((e) => {
+      return `에피소드 ${e.episode_no}\n---\n${e.content_tail}\n---`;
+    })
+    .join("\n\n");
+
+  const storyBible = (params.storyBible ?? "").trim();
+  const appendPrompt = (params.appendPrompt ?? "").trim();
+  const scoreThreshold = 3;
+
+  const systemInstruction = [
+    "너는 연재 소설의 루브릭 기반 검토자다. 너의 임무는 '검토'이며 새 내용을 창작하지 않는다.",
+    "입력: (1) 직전 1~2개 에피소드 발췌, (2) story_bible(선택), (3) append_prompt(선택), (4) 새 에피소드 초안.",
+    "출력: 오직 JSON 객체 1개만 (마크다운/설명문/코드블록 금지).",
+    "JSON 스키마:",
+    "- passed: boolean",
+    "- scores: { continuity, prose_quality, pacing, plot_progress, character_integrity, story_bible_compliance, append_prompt_compliance } (각 0~5)",
+    "- issues: { severity: 'blocker'|'major'|'minor', description: string, evidence_quote: string }[]",
+    "- revision_instruction?: string (passed=false일 때 필수)",
+    "규칙:",
+    `- passed=true는 (1) blocker/major 이슈가 없음 AND (2) 모든 점수 >= ${scoreThreshold}일 때만 가능.`,
+    "- evidence_quote는 반드시 입력에 포함된 문장을 verbatim으로 인용 (초안 또는 이전 에피소드 발췌 중에서).",
+    "- 문제가 없으면 issues는 빈 배열.",
+    "- passed=false면 revision_instruction에 작가가 바로 적용할 수정 지시를 단계별로 작성.",
+    "검토 기준:",
+    "1) continuity: 직전 장면과의 연결, 시간/장소/상태 연속성",
+    "2) prose_quality: 문장력, 가독성, 어색한 반복/부정확한 표현",
+    "3) pacing: 장면 전개 속도, 불필요한 지연/과속",
+    "4) plot_progress: 갈등/목표/사건의 전진 여부",
+    "5) character_integrity: 인물 성격/목표/관계의 일관성",
+    "6) story_bible_compliance: story_bible 규칙/설정 준수",
+    "7) append_prompt_compliance: append_prompt 지시 준수(단, story_bible 우선)",
+  ].join("\n");
+
+  const chat = params.ai.chats.create({
+    model: params.model,
+    config: {
+      systemInstruction,
+      temperature: 0,
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          passed: { type: Type.BOOLEAN },
+          scores: {
+            type: Type.OBJECT,
+            properties: {
+              continuity: { type: Type.NUMBER },
+              prose_quality: { type: Type.NUMBER },
+              pacing: { type: Type.NUMBER },
+              plot_progress: { type: Type.NUMBER },
+              character_integrity: { type: Type.NUMBER },
+              story_bible_compliance: { type: Type.NUMBER },
+              append_prompt_compliance: { type: Type.NUMBER },
+            },
+            required: [
+              "continuity",
+              "prose_quality",
+              "pacing",
+              "plot_progress",
+              "character_integrity",
+              "story_bible_compliance",
+              "append_prompt_compliance",
+            ],
+          },
+          issues: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                severity: { type: Type.STRING },
+                description: { type: Type.STRING },
+                evidence_quote: { type: Type.STRING },
+              },
+              required: ["severity", "description", "evidence_quote"],
+            },
+          },
+          revision_instruction: { type: Type.STRING },
+        },
+        required: ["passed", "scores", "issues"],
+        propertyOrdering: ["passed", "scores", "issues", "revision_instruction"],
+      },
+      tools: [],
+      toolConfig: {
+        functionCallingConfig: {
+          mode: FunctionCallingConfigMode.NONE,
+        },
+      },
+    },
+  });
+
+  const prompt = [
+    storyBible
+      ? "[story_bible]\n---\n" + storyBible + "\n---"
+      : "[story_bible]\n(없음)",
+    appendPrompt
+      ? "\n[append_prompt]\n---\n" + appendPrompt + "\n---"
+      : "\n[append_prompt]\n(없음)",
+    "\n[직전 에피소드 발췌]",
+    previous || "(없음)",
+    "\n[새 에피소드 초안]",
+    "---",
+    params.draft.episode_content,
+    "---",
+  ].join("\n");
+
+  const response = await sendGeminiWithRetry({
+    maxAttempts: 5,
+    send: async () => {
+      return await chat.sendMessage({ message: prompt });
+    },
+  });
+
+  const text = response.text;
+  if (typeof text !== "string" || text.trim().length === 0)
+    throw new AgentError({
+      type: "UPSTREAM_API_ERROR",
+      code: "UNAVAILABLE",
+      message: "Gemini returned empty text",
+      retryable: true,
+      details: { op: "reviewEpisodeRubric" },
+    });
+
+  const json = extractFirstJsonObject(text);
+  const parsed = RubricReviewResultSchema.parse(json);
+
+  const issues = parsed.issues ?? [];
+  const hasBlockingIssue = issues.some((issue) => issue.severity !== "minor");
+  const scoreOk = Object.values(parsed.scores).every(
+    (score) => Number.isFinite(score) && score >= scoreThreshold,
+  );
+  const passed = !hasBlockingIssue && scoreOk;
+
+  const instructionFromIssues = ((): string => {
+    const issueLines = issues
+      .map(
+        (issue) =>
+          `- (${issue.severity}) ${issue.description}\n  증거: ${issue.evidence_quote}`,
+      )
+      .join("\n");
+    return [
+      "루브릭 검토에서 문제가 발견됐다. 아래 항목을 해결하도록 **최소 수정**으로 다시 작성하라.",
+      `합격 기준: blocker/major 없음 + 모든 점수 >= ${scoreThreshold}.`,
+      "문제 목록:",
+      issueLines || "- (major) 전반적인 루브릭 기준 미달",
+    ].join("\n");
+  })();
+
+  const revisionInstruction = passed
+    ? undefined
+    : parsed.revision_instruction?.trim() || instructionFromIssues;
+
+  return {
+    passed,
+    scores: parsed.scores,
+    issues,
+    ...(revisionInstruction ? { revision_instruction: revisionInstruction } : {}),
+  };
+}
+
 export type {
   EpisodeDraft,
   ExtractEntitiesResult,
   ExtractFactsResult,
   GenerateResult,
   ReviewResult,
+  RubricReviewResult,
 };

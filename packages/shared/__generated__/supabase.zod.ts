@@ -154,6 +154,48 @@ export const publicTables = {
       created_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
+  /** @table episode_drafts: Per-episode draft attempts + reviews (wipeable except novels). */
+  episode_drafts: {
+    Row: z.object({
+      id: z.uuid(),
+      run_id: z.uuid(),
+      novel_id: z.uuid(),
+      episode_no: z.int(),
+      attempt_no: z.int(),
+      draft_status: z.string(),
+      draft_text: z.string(),
+      review_json: z.unknown().nullable(),
+      revision_instruction: z.string().nullable(),
+      created_at: z.iso.datetime({ offset: true }),
+      updated_at: z.iso.datetime({ offset: true }),
+    }).strict(),
+    Insert: z.object({
+      id: z.uuid().optional(),
+      run_id: z.uuid(),
+      novel_id: z.uuid(),
+      episode_no: z.int(),
+      attempt_no: z.int(),
+      draft_status: z.string().optional(),
+      draft_text: z.string(),
+      review_json: z.unknown().nullable().optional(),
+      revision_instruction: z.string().nullable().optional(),
+      created_at: z.iso.datetime({ offset: true }).optional(),
+      updated_at: z.iso.datetime({ offset: true }).optional(),
+    }).strict(),
+    Update: z.object({
+      id: z.uuid().optional(),
+      run_id: z.uuid().optional(),
+      novel_id: z.uuid().optional(),
+      episode_no: z.int().optional(),
+      attempt_no: z.int().optional(),
+      draft_status: z.string().optional(),
+      draft_text: z.string().optional(),
+      review_json: z.unknown().nullable().optional(),
+      revision_instruction: z.string().nullable().optional(),
+      created_at: z.iso.datetime({ offset: true }).optional(),
+      updated_at: z.iso.datetime({ offset: true }).optional(),
+    }).strict(),
+  },
   /** @table episodes: 소설의 회차/에피소드(챕터) 본문 */
   episodes: {
     Row: z.object({
@@ -197,6 +239,45 @@ export const publicTables = {
       created_at: z.iso.datetime({ offset: true }).optional(),
       /** @column episodes.story_time: 회차 내 사건 진행 시간(스토리 타임라인, timestamptz) */
       story_time: z.iso.datetime({ offset: true }).optional(),
+    }).strict(),
+  },
+  /** @table generation_runs: Per-novel generation run state (wipeable except novels). */
+  generation_runs: {
+    Row: z.object({
+      id: z.uuid(),
+      novel_id: z.uuid(),
+      status: z.string(),
+      target_episode_count: z.int(),
+      current_episode_no: z.int(),
+      attempt_no: z.int(),
+      config: z.unknown().nullable(),
+      failure_reason: z.string().nullable(),
+      created_at: z.iso.datetime({ offset: true }),
+      updated_at: z.iso.datetime({ offset: true }),
+    }).strict(),
+    Insert: z.object({
+      id: z.uuid().optional(),
+      novel_id: z.uuid(),
+      status: z.string().optional(),
+      target_episode_count: z.int().optional(),
+      current_episode_no: z.int().optional(),
+      attempt_no: z.int().optional(),
+      config: z.unknown().nullable().optional(),
+      failure_reason: z.string().nullable().optional(),
+      created_at: z.iso.datetime({ offset: true }).optional(),
+      updated_at: z.iso.datetime({ offset: true }).optional(),
+    }).strict(),
+    Update: z.object({
+      id: z.uuid().optional(),
+      novel_id: z.uuid().optional(),
+      status: z.string().optional(),
+      target_episode_count: z.int().optional(),
+      current_episode_no: z.int().optional(),
+      attempt_no: z.int().optional(),
+      config: z.unknown().nullable().optional(),
+      failure_reason: z.string().nullable().optional(),
+      created_at: z.iso.datetime({ offset: true }).optional(),
+      updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
   /** @table locations: 소설 내 장소/배경 마스터 데이터 */
@@ -253,6 +334,8 @@ export const publicTables = {
       created_at: z.iso.datetime({ offset: true }),
       /** @column novels.story_bible: 소설 성경/스토리 바이블(Markdown 텍스트) */
       story_bible: z.string(),
+      /** @column novels.append_prompt: Optional per-novel prompt appended to story_bible for generation tuning. */
+      append_prompt: z.string().nullable(),
     }).strict(),
     Insert: z.object({
       /** @column novels.id: 소설 ID (UUID, 기본값 gen_random_uuid()) */
@@ -267,6 +350,8 @@ export const publicTables = {
       created_at: z.iso.datetime({ offset: true }).optional(),
       /** @column novels.story_bible: 소설 성경/스토리 바이블(Markdown 텍스트) */
       story_bible: z.string().optional(),
+      /** @column novels.append_prompt: Optional per-novel prompt appended to story_bible for generation tuning. */
+      append_prompt: z.string().nullable().optional(),
     }).strict(),
     Update: z.object({
       /** @column novels.id: 소설 ID (UUID, 기본값 gen_random_uuid()) */
@@ -281,6 +366,8 @@ export const publicTables = {
       created_at: z.iso.datetime({ offset: true }).optional(),
       /** @column novels.story_bible: 소설 성경/스토리 바이블(Markdown 텍스트) */
       story_bible: z.string().optional(),
+      /** @column novels.append_prompt: Optional per-novel prompt appended to story_bible for generation tuning. */
+      append_prompt: z.string().nullable().optional(),
     }).strict(),
   },
   /** @table plot_seed_characters: 플롯 시드 ↔ 캐릭터 N:M 연결(조인 테이블) */

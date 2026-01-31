@@ -197,6 +197,64 @@ export type Database = {
           },
         ]
       }
+      /** @table episode_drafts: Per-episode draft attempts + reviews (wipeable except novels). */
+      episode_drafts: {
+        Row: {
+          attempt_no: number
+          created_at: string
+          draft_status: string
+          draft_text: string
+          episode_no: number
+          id: string
+          novel_id: string
+          review_json: Json | null
+          revision_instruction: string | null
+          run_id: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_no: number
+          created_at?: string
+          draft_status?: string
+          draft_text: string
+          episode_no: number
+          id?: string
+          novel_id: string
+          review_json?: Json | null
+          revision_instruction?: string | null
+          run_id: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_no?: number
+          created_at?: string
+          draft_status?: string
+          draft_text?: string
+          episode_no?: number
+          id?: string
+          novel_id?: string
+          review_json?: Json | null
+          revision_instruction?: string | null
+          run_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "episode_drafts_novel_id_fkey"
+            columns: ["novel_id"]
+            isOneToOne: false
+            referencedRelation: "novels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "episode_drafts_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "generation_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       /** @table episodes: 소설의 회차/에피소드(챕터) 본문 */
       episodes: {
         Row: {
@@ -244,6 +302,54 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "episodes_novel_id_fkey1"
+            columns: ["novel_id"]
+            isOneToOne: false
+            referencedRelation: "novels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      /** @table generation_runs: Per-novel generation run state (wipeable except novels). */
+      generation_runs: {
+        Row: {
+          attempt_no: number
+          config: Json | null
+          created_at: string
+          current_episode_no: number
+          failure_reason: string | null
+          id: string
+          novel_id: string
+          status: string
+          target_episode_count: number
+          updated_at: string
+        }
+        Insert: {
+          attempt_no?: number
+          config?: Json | null
+          created_at?: string
+          current_episode_no?: number
+          failure_reason?: string | null
+          id?: string
+          novel_id: string
+          status?: string
+          target_episode_count?: number
+          updated_at?: string
+        }
+        Update: {
+          attempt_no?: number
+          config?: Json | null
+          created_at?: string
+          current_episode_no?: number
+          failure_reason?: string | null
+          id?: string
+          novel_id?: string
+          status?: string
+          target_episode_count?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "generation_runs_novel_id_fkey"
             columns: ["novel_id"]
             isOneToOne: false
             referencedRelation: "novels"
@@ -302,6 +408,8 @@ export type Database = {
       /** @table novels: 소설(시리즈) 메타데이터 루트 엔티티 */
       novels: {
         Row: {
+          /** @column novels.append_prompt: Optional per-novel prompt appended to story_bible for generation tuning. */
+          append_prompt: string | null
           /** @column novels.created_at: 생성 시각(기본값 now()) */
           created_at: string
           /** @column novels.genre: 장르(자유 텍스트) */
@@ -316,6 +424,8 @@ export type Database = {
           title: string
         }
         Insert: {
+          /** @column novels.append_prompt: Optional per-novel prompt appended to story_bible for generation tuning. */
+          append_prompt?: string | null
           /** @column novels.created_at: 생성 시각(기본값 now()) */
           created_at?: string
           /** @column novels.genre: 장르(자유 텍스트) */
@@ -330,6 +440,8 @@ export type Database = {
           title: string
         }
         Update: {
+          /** @column novels.append_prompt: Optional per-novel prompt appended to story_bible for generation tuning. */
+          append_prompt?: string | null
           /** @column novels.created_at: 생성 시각(기본값 now()) */
           created_at?: string
           /** @column novels.genre: 장르(자유 텍스트) */
@@ -555,6 +667,7 @@ export type Database = {
           similarity: number
         }[]
       }
+      reset_novel_data: { Args: { p_novel_id: string }; Returns: undefined }
     }
     Enums: {
       gender: "male" | "female"
