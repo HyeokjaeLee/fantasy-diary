@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "env:pull": "doppler secrets download --project web --config dev --format env --no-file > .env",
+    "predev": "bun run env:pull",
     "dev": "next dev --turbopack -p 3019",
     "build": "next build",
     "start": "next start",
@@ -30,6 +32,7 @@
     "@eslint/eslintrc": "latest",
     "@eslint/js": "latest",
     "@fantasy-diary/configs": "workspace:*",
+    "@tailwindcss/postcss": "^4.1.15",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

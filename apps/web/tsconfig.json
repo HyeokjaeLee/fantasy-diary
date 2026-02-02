@@ -1,11 +1,17 @@
 {
-  "extends": "/packages/configs/tsconfig.base.json",
+  "extends": "@fantasy-diary/configs/tsconfig.base",
   "compilerOptions": {
+    "baseUrl": ".",
     "plugins": [
       {
         "name": "next"
       }
-    ]
+    ],
+    "jsx": "preserve",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@fantasy-diary/*": ["../../packages/*"]
+    }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
   "exclude": ["node_modules"]
