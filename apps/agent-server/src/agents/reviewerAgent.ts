@@ -11,6 +11,7 @@ const ReviewerSchema = z
   .object({
     approved: z.boolean(),
     feedback: z.string().optional(),
+    plotSeedsResolved: z.boolean().optional(),
   })
   .superRefine((value, context) => {
     if (!value.approved && (!value.feedback || value.feedback.trim().length === 0)) {
@@ -27,6 +28,7 @@ type ReviewerInput = {
   novel: NovelRow;
   episodes: EpisodeRow[];
   draftBody: string;
+  initialPlotSeeds?: string;
 };
 
 function truncateText(text: string, limit: number): string {
@@ -60,6 +62,7 @@ export class ReviewerAgent {
     const prompt = promptTemplate
       .replace("${title}", input.novel.title)
       .replace("${storyBible}", input.novel.story_bible)
+      .replace("${initialPlotSeeds}", input.initialPlotSeeds ?? "(none)")
       .replace("${previousEpisodes}", formatEpisodeContext(input.episodes))
       .replace("${draftBody}", input.draftBody);
 

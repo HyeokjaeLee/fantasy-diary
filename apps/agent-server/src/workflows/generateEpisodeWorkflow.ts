@@ -12,6 +12,7 @@ import {
   fetchLocations,
   fetchNovel,
   insertEpisode,
+  updateNovel,
   type LocationInsert,
   type NovelRow,
   upsertCharacters,
@@ -166,9 +167,13 @@ export async function generateEpisodeWorkflow(
       novel,
       episodes,
       draftBody: writerOutput.body,
+      initialPlotSeeds,
     });
 
     if (review.approved) {
+      if (review.plotSeedsResolved && !novel.plot_seeds_resolved) {
+        await updateNovel(client, novel.id, { plot_seeds_resolved: true });
+      }
       break;
     }
 

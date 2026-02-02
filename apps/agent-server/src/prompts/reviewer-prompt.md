@@ -5,6 +5,9 @@
 스토리 바이블:
 ${storyBible}
 
+초기 플롯 시드:
+${initialPlotSeeds}
+
 이전 에피소드:
 ${previousEpisodes}
 
