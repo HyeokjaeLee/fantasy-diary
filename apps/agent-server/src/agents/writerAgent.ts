@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import { generateJson } from "../lib/genai";
+import {
+  loadWriterPromptTemplate,
+  loadWriterSystemPrompt,
+} from "../lib/prompts";
 import type {
   CharacterRow,
   EpisodeRow,
@@ -86,38 +90,19 @@ export class WriterAgent {
   ) {}
 
   async generate(input: WriterInput): Promise<WriterResult> {
-    const systemInstruction = [
-      "You are a fiction writer generating the next episode of a serialized novel.",
-      "Return only JSON that matches the given schema.",
-      "Do not include markdown, code fences, or commentary.",
-      "Use double quotes for all JSON keys and string values.",
-      "The body must be between 500 and 700 characters.",
-      "Follow the story bible and append prompt for tone and rules.",
-      "Maintain smooth flow and consistent style with prior episodes.",
-      "Avoid repetitive expressions or redundant phrasing in the episode.",
-      "Keep the JSON concise and do not add any extra fields.",
-      "If new characters or locations appear, include them in the structured fields.",
-    ].join("\n");
+    const systemInstruction = loadWriterSystemPrompt();
 
-    const prompt = [
-      `Novel title: ${input.novel.title}`,
-      `Genre: ${input.novel.genre}`,
-      `Episode number to write: ${input.episodeNumber}`,
-      "Story bible:",
-      input.novel.story_bible,
-      input.novel.append_prompt ? "Append prompt:" : "Append prompt: (none)",
-      input.novel.append_prompt ?? "",
-      "\nExisting characters:",
-      formatCharacters(input.characters),
-      "\nExisting locations:",
-      formatLocations(input.locations),
-      "\nRecent episodes:",
-      formatEpisodeContext(input.episodes),
-      input.feedback ? "\nReviewer feedback:" : "",
-      input.feedback ?? "",
-    ]
-      .filter((line) => line.length > 0)
-      .join("\n");
+    const promptTemplate = loadWriterPromptTemplate();
+    const prompt = promptTemplate
+      .replace("${title}", input.novel.title)
+      .replace("${genre}", input.novel.genre)
+      .replace("${episodeNumber}", String(input.episodeNumber))
+      .replace("${storyBible}", input.novel.story_bible)
+      .replace("${appendPrompt}", input.novel.append_prompt ?? "(없음)")
+      .replace("${characters}", formatCharacters(input.characters))
+      .replace("${locations}", formatLocations(input.locations))
+      .replace("${recentEpisodes}", formatEpisodeContext(input.episodes))
+      .replace("${feedback}", input.feedback ?? "");
 
     return generateJson(this.client, {
       model: this.model,

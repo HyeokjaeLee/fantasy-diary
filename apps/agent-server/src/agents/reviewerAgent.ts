@@ -2,6 +2,10 @@ import { z } from "zod";
 
 import type { EpisodeRow, NovelRow } from "../repositories/novelRepository";
 import { generateJson } from "../lib/genai";
+import {
+  loadReviewerPromptTemplate,
+  loadReviewerSystemPrompt,
+} from "../lib/prompts";
 
 const ReviewerSchema = z
   .object({
@@ -47,27 +51,14 @@ export class ReviewerAgent {
   ) {}
 
   async review(input: ReviewerInput): Promise<ReviewerResult> {
-    const systemInstruction = [
-      "You are a reviewer validating a serialized novel episode.",
-      "Check for style consistency, setting consistency, repeated expressions, and sentence flow.",
-      "Use the story bible as the primary reference for tone and rules.",
-      "Approve unless there are clear contradictions, severe repetition, or broken sentences.",
-      "If issues are minor or subjective, approve and keep feedback empty.",
-      "Return only JSON and do not include markdown or commentary.",
-      "Return only JSON that matches the given schema.",
-      "Use double quotes for all JSON keys and string values.",
-      "Keep the response concise.",
-    ].join("\n");
+    const systemInstruction = loadReviewerSystemPrompt();
 
-    const prompt = [
-      `Novel title: ${input.novel.title}`,
-      "Story bible:",
-      input.novel.story_bible,
-      "\nPrevious episodes:",
-      formatEpisodeContext(input.episodes),
-      "\nDraft episode:",
-      input.draftBody,
-    ].join("\n");
+    const promptTemplate = loadReviewerPromptTemplate();
+    const prompt = promptTemplate
+      .replace("${title}", input.novel.title)
+      .replace("${storyBible}", input.novel.story_bible)
+      .replace("${previousEpisodes}", formatEpisodeContext(input.episodes))
+      .replace("${draftBody}", input.draftBody);
 
     return generateJson(this.client, {
       model: this.model,
