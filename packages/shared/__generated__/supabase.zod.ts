@@ -10,12 +10,13 @@ export const publicEnums = {
 } as const;
 
 export const publicTables = {
-  /** @table characters: Characters that appear in a novel. */
+  /** @table characters: 소설에 등장하는 캐릭터 테이블 */
   characters: {
     Row: z.object({
-      id: z.uuid(),
+      /** @column characters.id: 캐릭터 고유 ID (NanoID) */
+      id: z.string().nanoid(),
       /** @column characters.novel_id: 소설 ID */
-      novel_id: z.uuid(),
+      novel_id: z.string(),
       /** @column characters.name: 캐릭터 이름 */
       name: z.string(),
       /** @column characters.traits: 캐릭터 특징 (선택 사항) */
@@ -30,9 +31,10 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }),
     }).strict(),
     Insert: z.object({
-      id: z.uuid().optional(),
+      /** @column characters.id: 캐릭터 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column characters.novel_id: 소설 ID */
-      novel_id: z.uuid(),
+      novel_id: z.string(),
       /** @column characters.name: 캐릭터 이름 */
       name: z.string(),
       /** @column characters.traits: 캐릭터 특징 (선택 사항) */
@@ -47,9 +49,10 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
     Update: z.object({
-      id: z.uuid().optional(),
+      /** @column characters.id: 캐릭터 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column characters.novel_id: 소설 ID */
-      novel_id: z.uuid().optional(),
+      novel_id: z.string().optional(),
       /** @column characters.name: 캐릭터 이름 */
       name: z.string().optional(),
       /** @column characters.traits: 캐릭터 특징 (선택 사항) */
@@ -64,72 +67,91 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
-  /** @table episode_characters: Join table linking episodes and characters. */
+  /** @table episode_characters: 에피소드와 캐릭터의 연결 테이블 (조인 테이블) */
   episode_characters: {
     Row: z.object({
-      id: z.uuid(),
+      /** @column episode_characters.id: 조인 레코드 고유 ID (NanoID) */
+      id: z.string().nanoid(),
       /** @column episode_characters.episode_id: 에피소드 ID */
-      episode_id: z.uuid(),
+      episode_id: z.string(),
       /** @column episode_characters.character_id: 캐릭터 ID */
-      character_id: z.uuid(),
+      character_id: z.string(),
       /** @column episode_characters.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }),
+      /** @column episode_characters.updated_at: 마지막 수정 시간 */
+      updated_at: z.iso.datetime({ offset: true }).nullable(),
     }).strict(),
     Insert: z.object({
-      id: z.uuid().optional(),
+      /** @column episode_characters.id: 조인 레코드 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column episode_characters.episode_id: 에피소드 ID */
-      episode_id: z.uuid(),
+      episode_id: z.string(),
       /** @column episode_characters.character_id: 캐릭터 ID */
-      character_id: z.uuid(),
+      character_id: z.string(),
       /** @column episode_characters.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
+      /** @column episode_characters.updated_at: 마지막 수정 시간 */
+      updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
     }).strict(),
     Update: z.object({
-      id: z.uuid().optional(),
+      /** @column episode_characters.id: 조인 레코드 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column episode_characters.episode_id: 에피소드 ID */
-      episode_id: z.uuid().optional(),
+      episode_id: z.string().optional(),
       /** @column episode_characters.character_id: 캐릭터 ID */
-      character_id: z.uuid().optional(),
+      character_id: z.string().optional(),
       /** @column episode_characters.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
+      /** @column episode_characters.updated_at: 마지막 수정 시간 */
+      updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
     }).strict(),
   },
-  /** @table episode_locations: Join table linking episodes and locations. */
+  /** @table episode_locations: 에피소드와 장소의 연결 테이블 (조인 테이블) */
   episode_locations: {
     Row: z.object({
-      id: z.uuid(),
+      /** @column episode_locations.id: 조인 레코드 고유 ID (NanoID) */
+      id: z.string().nanoid(),
       /** @column episode_locations.episode_id: 에피소드 ID */
-      episode_id: z.uuid(),
+      episode_id: z.string(),
       /** @column episode_locations.location_id: 장소 ID */
-      location_id: z.uuid(),
+      location_id: z.string(),
       /** @column episode_locations.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }),
+      /** @column episode_locations.updated_at: 마지막 수정 시간 */
+      updated_at: z.iso.datetime({ offset: true }).nullable(),
     }).strict(),
     Insert: z.object({
-      id: z.uuid().optional(),
+      /** @column episode_locations.id: 조인 레코드 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column episode_locations.episode_id: 에피소드 ID */
-      episode_id: z.uuid(),
+      episode_id: z.string(),
       /** @column episode_locations.location_id: 장소 ID */
-      location_id: z.uuid(),
+      location_id: z.string(),
       /** @column episode_locations.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
+      /** @column episode_locations.updated_at: 마지막 수정 시간 */
+      updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
     }).strict(),
     Update: z.object({
-      id: z.uuid().optional(),
+      /** @column episode_locations.id: 조인 레코드 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column episode_locations.episode_id: 에피소드 ID */
-      episode_id: z.uuid().optional(),
+      episode_id: z.string().optional(),
       /** @column episode_locations.location_id: 장소 ID */
-      location_id: z.uuid().optional(),
+      location_id: z.string().optional(),
       /** @column episode_locations.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
+      /** @column episode_locations.updated_at: 마지막 수정 시간 */
+      updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
     }).strict(),
   },
-  /** @table episodes: Individual episodes for a novel series. */
+  /** @table episodes: 소설의 개별 에피소드 테이블 */
   episodes: {
     Row: z.object({
-      id: z.uuid(),
+      /** @column episodes.id: 에피소드 고유 ID (NanoID) */
+      id: z.string().nanoid(),
       /** @column episodes.novel_id: 소설 ID */
-      novel_id: z.uuid(),
+      novel_id: z.string(),
       /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
       episode_number: z.int(),
       /** @column episodes.body: 에피소드 본문 */
@@ -144,9 +166,10 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }),
     }).strict(),
     Insert: z.object({
-      id: z.uuid().optional(),
+      /** @column episodes.id: 에피소드 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column episodes.novel_id: 소설 ID */
-      novel_id: z.uuid(),
+      novel_id: z.string(),
       /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
       episode_number: z.int(),
       /** @column episodes.body: 에피소드 본문 */
@@ -161,9 +184,10 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
     Update: z.object({
-      id: z.uuid().optional(),
+      /** @column episodes.id: 에피소드 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column episodes.novel_id: 소설 ID */
-      novel_id: z.uuid().optional(),
+      novel_id: z.string().optional(),
       /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
       episode_number: z.int().optional(),
       /** @column episodes.body: 에피소드 본문 */
@@ -178,12 +202,13 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
-  /** @table locations: Locations that appear in a novel. */
+  /** @table locations: 소설에 등장하는 장소 테이블 */
   locations: {
     Row: z.object({
-      id: z.uuid(),
+      /** @column locations.id: 장소 고유 ID (NanoID) */
+      id: z.string().nanoid(),
       /** @column locations.novel_id: 소설 ID */
-      novel_id: z.uuid(),
+      novel_id: z.string(),
       /** @column locations.name: 장소 이름 */
       name: z.string(),
       /** @column locations.description: 장소 설명 (선택 사항) */
@@ -194,9 +219,10 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }),
     }).strict(),
     Insert: z.object({
-      id: z.uuid().optional(),
+      /** @column locations.id: 장소 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column locations.novel_id: 소설 ID */
-      novel_id: z.uuid(),
+      novel_id: z.string(),
       /** @column locations.name: 장소 이름 */
       name: z.string(),
       /** @column locations.description: 장소 설명 (선택 사항) */
@@ -207,9 +233,10 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
     Update: z.object({
-      id: z.uuid().optional(),
+      /** @column locations.id: 장소 고유 ID (NanoID) */
+      id: z.string().nanoid().optional(),
       /** @column locations.novel_id: 소설 ID */
-      novel_id: z.uuid().optional(),
+      novel_id: z.string().optional(),
       /** @column locations.name: 장소 이름 */
       name: z.string().optional(),
       /** @column locations.description: 장소 설명 (선택 사항) */
@@ -223,8 +250,8 @@ export const publicTables = {
   /** @table novels: 소설(시리즈) 메타데이터 루트 엔티티 */
   novels: {
     Row: z.object({
-      /** @column novels.id: 소설 고유 ID (UUID) */
-      id: z.uuid(),
+      /** @column novels.id: 소설 고유 ID (nanoid) */
+      id: z.string().nanoid(),
       /** @column novels.title: 소설 제목 */
       title: z.string(),
       /** @column novels.genre: 장르(자유 텍스트) */
@@ -245,8 +272,8 @@ export const publicTables = {
       plot_seeds_resolved: z.boolean().nullable(),
     }).strict(),
     Insert: z.object({
-      /** @column novels.id: 소설 고유 ID (UUID) */
-      id: z.uuid().optional(),
+      /** @column novels.id: 소설 고유 ID (nanoid) */
+      id: z.string().nanoid().optional(),
       /** @column novels.title: 소설 제목 */
       title: z.string(),
       /** @column novels.genre: 장르(자유 텍스트) */
@@ -267,8 +294,8 @@ export const publicTables = {
       plot_seeds_resolved: z.boolean().nullable().optional(),
     }).strict(),
     Update: z.object({
-      /** @column novels.id: 소설 고유 ID (UUID) */
-      id: z.uuid().optional(),
+      /** @column novels.id: 소설 고유 ID (nanoid) */
+      id: z.string().nanoid().optional(),
       /** @column novels.title: 소설 제목 */
       title: z.string().optional(),
       /** @column novels.genre: 장르(자유 텍스트) */

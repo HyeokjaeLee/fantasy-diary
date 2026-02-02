@@ -14,13 +14,14 @@ export type Database = {
   }
   public: {
     Tables: {
-      /** @table characters: Characters that appear in a novel. */
+      /** @table characters: 소설에 등장하는 캐릭터 테이블 */
       characters: {
         Row: {
           /** @column characters.created_at: 생성 시간 */
           created_at: string
           /** @column characters.description: 캐릭터 상세 설명 (선택 사항) */
           description: string | null
+          /** @column characters.id: 캐릭터 고유 ID (NanoID) */
           id: string
           /** @column characters.name: 캐릭터 이름 */
           name: string
@@ -38,6 +39,7 @@ export type Database = {
           created_at?: string
           /** @column characters.description: 캐릭터 상세 설명 (선택 사항) */
           description?: string | null
+          /** @column characters.id: 캐릭터 고유 ID (NanoID) */
           id?: string
           /** @column characters.name: 캐릭터 이름 */
           name: string
@@ -55,6 +57,7 @@ export type Database = {
           created_at?: string
           /** @column characters.description: 캐릭터 상세 설명 (선택 사항) */
           description?: string | null
+          /** @column characters.id: 캐릭터 고유 ID (NanoID) */
           id?: string
           /** @column characters.name: 캐릭터 이름 */
           name?: string
@@ -77,7 +80,7 @@ export type Database = {
           },
         ]
       }
-      /** @table episode_characters: Join table linking episodes and characters. */
+      /** @table episode_characters: 에피소드와 캐릭터의 연결 테이블 (조인 테이블) */
       episode_characters: {
         Row: {
           /** @column episode_characters.character_id: 캐릭터 ID */
@@ -86,7 +89,10 @@ export type Database = {
           created_at: string
           /** @column episode_characters.episode_id: 에피소드 ID */
           episode_id: string
+          /** @column episode_characters.id: 조인 레코드 고유 ID (NanoID) */
           id: string
+          /** @column episode_characters.updated_at: 마지막 수정 시간 */
+          updated_at: string | null
         }
         Insert: {
           /** @column episode_characters.character_id: 캐릭터 ID */
@@ -95,7 +101,10 @@ export type Database = {
           created_at?: string
           /** @column episode_characters.episode_id: 에피소드 ID */
           episode_id: string
+          /** @column episode_characters.id: 조인 레코드 고유 ID (NanoID) */
           id?: string
+          /** @column episode_characters.updated_at: 마지막 수정 시간 */
+          updated_at?: string | null
         }
         Update: {
           /** @column episode_characters.character_id: 캐릭터 ID */
@@ -104,7 +113,10 @@ export type Database = {
           created_at?: string
           /** @column episode_characters.episode_id: 에피소드 ID */
           episode_id?: string
+          /** @column episode_characters.id: 조인 레코드 고유 ID (NanoID) */
           id?: string
+          /** @column episode_characters.updated_at: 마지막 수정 시간 */
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -123,34 +135,43 @@ export type Database = {
           },
         ]
       }
-      /** @table episode_locations: Join table linking episodes and locations. */
+      /** @table episode_locations: 에피소드와 장소의 연결 테이블 (조인 테이블) */
       episode_locations: {
         Row: {
           /** @column episode_locations.created_at: 생성 시간 */
           created_at: string
           /** @column episode_locations.episode_id: 에피소드 ID */
           episode_id: string
+          /** @column episode_locations.id: 조인 레코드 고유 ID (NanoID) */
           id: string
           /** @column episode_locations.location_id: 장소 ID */
           location_id: string
+          /** @column episode_locations.updated_at: 마지막 수정 시간 */
+          updated_at: string | null
         }
         Insert: {
           /** @column episode_locations.created_at: 생성 시간 */
           created_at?: string
           /** @column episode_locations.episode_id: 에피소드 ID */
           episode_id: string
+          /** @column episode_locations.id: 조인 레코드 고유 ID (NanoID) */
           id?: string
           /** @column episode_locations.location_id: 장소 ID */
           location_id: string
+          /** @column episode_locations.updated_at: 마지막 수정 시간 */
+          updated_at?: string | null
         }
         Update: {
           /** @column episode_locations.created_at: 생성 시간 */
           created_at?: string
           /** @column episode_locations.episode_id: 에피소드 ID */
           episode_id?: string
+          /** @column episode_locations.id: 조인 레코드 고유 ID (NanoID) */
           id?: string
           /** @column episode_locations.location_id: 장소 ID */
           location_id?: string
+          /** @column episode_locations.updated_at: 마지막 수정 시간 */
+          updated_at?: string | null
         }
         Relationships: [
           {
@@ -169,7 +190,7 @@ export type Database = {
           },
         ]
       }
-      /** @table episodes: Individual episodes for a novel series. */
+      /** @table episodes: 소설의 개별 에피소드 테이블 */
       episodes: {
         Row: {
           /** @column episodes.body: 에피소드 본문 */
@@ -182,6 +203,7 @@ export type Database = {
           embedding_model: string | null
           /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
           episode_number: number
+          /** @column episodes.id: 에피소드 고유 ID (NanoID) */
           id: string
           /** @column episodes.novel_id: 소설 ID */
           novel_id: string
@@ -199,6 +221,7 @@ export type Database = {
           embedding_model?: string | null
           /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
           episode_number: number
+          /** @column episodes.id: 에피소드 고유 ID (NanoID) */
           id?: string
           /** @column episodes.novel_id: 소설 ID */
           novel_id: string
@@ -216,6 +239,7 @@ export type Database = {
           embedding_model?: string | null
           /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
           episode_number?: number
+          /** @column episodes.id: 에피소드 고유 ID (NanoID) */
           id?: string
           /** @column episodes.novel_id: 소설 ID */
           novel_id?: string
@@ -232,13 +256,14 @@ export type Database = {
           },
         ]
       }
-      /** @table locations: Locations that appear in a novel. */
+      /** @table locations: 소설에 등장하는 장소 테이블 */
       locations: {
         Row: {
           /** @column locations.created_at: 생성 시간 */
           created_at: string
           /** @column locations.description: 장소 설명 (선택 사항) */
           description: string | null
+          /** @column locations.id: 장소 고유 ID (NanoID) */
           id: string
           /** @column locations.name: 장소 이름 */
           name: string
@@ -252,6 +277,7 @@ export type Database = {
           created_at?: string
           /** @column locations.description: 장소 설명 (선택 사항) */
           description?: string | null
+          /** @column locations.id: 장소 고유 ID (NanoID) */
           id?: string
           /** @column locations.name: 장소 이름 */
           name: string
@@ -265,6 +291,7 @@ export type Database = {
           created_at?: string
           /** @column locations.description: 장소 설명 (선택 사항) */
           description?: string | null
+          /** @column locations.id: 장소 고유 ID (NanoID) */
           id?: string
           /** @column locations.name: 장소 이름 */
           name?: string
@@ -292,7 +319,7 @@ export type Database = {
           created_at: string
           /** @column novels.genre: 장르(자유 텍스트) */
           genre: string
-          /** @column novels.id: 소설 고유 ID (UUID) */
+          /** @column novels.id: 소설 고유 ID (nanoid) */
           id: string
           /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
           initial_plot_seeds: string | null
@@ -314,7 +341,7 @@ export type Database = {
           created_at?: string
           /** @column novels.genre: 장르(자유 텍스트) */
           genre: string
-          /** @column novels.id: 소설 고유 ID (UUID) */
+          /** @column novels.id: 소설 고유 ID (nanoid) */
           id?: string
           /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
           initial_plot_seeds?: string | null
@@ -336,7 +363,7 @@ export type Database = {
           created_at?: string
           /** @column novels.genre: 장르(자유 텍스트) */
           genre?: string
-          /** @column novels.id: 소설 고유 ID (UUID) */
+          /** @column novels.id: 소설 고유 ID (nanoid) */
           id?: string
           /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
           initial_plot_seeds?: string | null
@@ -361,6 +388,7 @@ export type Database = {
       dearmor: { Args: { "": string }; Returns: string }
       gen_random_uuid: { Args: never; Returns: string }
       gen_salt: { Args: { "": string }; Returns: string }
+      nanoid: { Args: { size?: number }; Returns: string }
       pgp_armor_headers: {
         Args: { "": string }
         Returns: Record<string, unknown>[]

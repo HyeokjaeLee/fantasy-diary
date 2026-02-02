@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 
 import { SQL } from "bun";
+import { nanoid } from "nanoid";
 
 type TableCommentRow = {
   table_name: string;
@@ -327,6 +328,11 @@ function renderZodSchemaSource(params: {
   const enumNames = Array.from(params.enums.keys()).sort();
   const tableNames = Array.from(params.columnsByTable.keys()).sort();
 
+  // ID 컬럼 감지: 컬럼명이 'id'인 경우 NanoID로 처리
+  function isNanoIdColumn(tableName: string, columnName: string): boolean {
+    return columnName === 'id';
+  }
+
   function zodForUdtName(udtName: string): string {
     if (params.enums.has(udtName)) return `publicEnums.${udtName}`;
 
@@ -363,7 +369,12 @@ function renderZodSchemaSource(params: {
     }
   }
 
-  function zodForColumn(column: ColumnMeta): string {
+  function zodForColumn(column: ColumnMeta, tableName: string): string {
+    // NanoID 컬럼 감지: ID 컬럼은 z.string().nanoid() 사용
+    if (isNanoIdColumn(tableName, column.name)) {
+      return "z.string().nanoid()";
+    }
+
     if (column.dataType === "ARRAY" || column.udtName.startsWith("_")) {
       const elementUdt = column.udtName.startsWith("_")
         ? column.udtName.slice(1)
@@ -454,7 +465,7 @@ function renderZodSchemaSource(params: {
       }
 
       const key = isValidObjectKey(column.name) ? column.name : quoteStringLiteral(column.name);
-      const base = wrapNullable(zodForColumn(column), column.isNullable);
+      const base = wrapNullable(zodForColumn(column, tableName), column.isNullable);
       lines.push(`      ${key}: ${base},`);
     }
     lines.push("    }).strict(),");
@@ -468,7 +479,7 @@ function renderZodSchemaSource(params: {
       }
 
       const key = isValidObjectKey(column.name) ? column.name : quoteStringLiteral(column.name);
-      const base = wrapNullable(zodForColumn(column), column.isNullable);
+      const base = wrapNullable(zodForColumn(column, tableName), column.isNullable);
       const schema = isInsertRequired(column) ? base : `${base}.optional()`;
       lines.push(`      ${key}: ${schema},`);
     }
@@ -483,7 +494,7 @@ function renderZodSchemaSource(params: {
       }
 
       const key = isValidObjectKey(column.name) ? column.name : quoteStringLiteral(column.name);
-      const base = wrapNullable(zodForColumn(column), column.isNullable);
+      const base = wrapNullable(zodForColumn(column, tableName), column.isNullable);
       lines.push(`      ${key}: ${base}.optional(),`);
     }
     lines.push("    }).strict(),");
