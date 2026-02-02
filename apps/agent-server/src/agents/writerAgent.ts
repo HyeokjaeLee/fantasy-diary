@@ -2,9 +2,9 @@ import { z } from "zod";
 
 import { generateJson } from "../lib/genai";
 import {
+  loadInitialPlotSeeds,
   loadWriterPromptTemplate,
   loadWriterSystemPrompt,
-  loadInitialPlotSeeds,
 } from "../lib/prompts";
 import type {
   CharacterRow,

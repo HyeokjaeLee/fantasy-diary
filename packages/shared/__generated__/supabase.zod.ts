@@ -14,53 +14,53 @@ export const publicTables = {
   characters: {
     Row: z.object({
       id: z.uuid(),
-      /** @column characters.novel_id: Parent novel id for this character. */
+      /** @column characters.novel_id: 소설 ID */
       novel_id: z.uuid(),
-      /** @column characters.name: Character name. */
+      /** @column characters.name: 캐릭터 이름 */
       name: z.string(),
-      /** @column characters.traits: Optional concise traits for the character. */
+      /** @column characters.traits: 캐릭터 특징 (선택 사항) */
       traits: z.string().nullable(),
-      /** @column characters.personality: Optional personality description for the character. */
+      /** @column characters.personality: 캐릭터 성격 설명 (선택 사항) */
       personality: z.string().nullable(),
-      /** @column characters.description: Optional longer character description. */
+      /** @column characters.description: 캐릭터 상세 설명 (선택 사항) */
       description: z.string().nullable(),
-      /** @column characters.created_at: Character creation timestamp. */
+      /** @column characters.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }),
-      /** @column characters.updated_at: Character last update timestamp. */
+      /** @column characters.updated_at: 마지막 수정 시간 */
       updated_at: z.iso.datetime({ offset: true }),
     }).strict(),
     Insert: z.object({
       id: z.uuid().optional(),
-      /** @column characters.novel_id: Parent novel id for this character. */
+      /** @column characters.novel_id: 소설 ID */
       novel_id: z.uuid(),
-      /** @column characters.name: Character name. */
+      /** @column characters.name: 캐릭터 이름 */
       name: z.string(),
-      /** @column characters.traits: Optional concise traits for the character. */
+      /** @column characters.traits: 캐릭터 특징 (선택 사항) */
       traits: z.string().nullable().optional(),
-      /** @column characters.personality: Optional personality description for the character. */
+      /** @column characters.personality: 캐릭터 성격 설명 (선택 사항) */
       personality: z.string().nullable().optional(),
-      /** @column characters.description: Optional longer character description. */
+      /** @column characters.description: 캐릭터 상세 설명 (선택 사항) */
       description: z.string().nullable().optional(),
-      /** @column characters.created_at: Character creation timestamp. */
+      /** @column characters.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
-      /** @column characters.updated_at: Character last update timestamp. */
+      /** @column characters.updated_at: 마지막 수정 시간 */
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
     Update: z.object({
       id: z.uuid().optional(),
-      /** @column characters.novel_id: Parent novel id for this character. */
+      /** @column characters.novel_id: 소설 ID */
       novel_id: z.uuid().optional(),
-      /** @column characters.name: Character name. */
+      /** @column characters.name: 캐릭터 이름 */
       name: z.string().optional(),
-      /** @column characters.traits: Optional concise traits for the character. */
+      /** @column characters.traits: 캐릭터 특징 (선택 사항) */
       traits: z.string().nullable().optional(),
-      /** @column characters.personality: Optional personality description for the character. */
+      /** @column characters.personality: 캐릭터 성격 설명 (선택 사항) */
       personality: z.string().nullable().optional(),
-      /** @column characters.description: Optional longer character description. */
+      /** @column characters.description: 캐릭터 상세 설명 (선택 사항) */
       description: z.string().nullable().optional(),
-      /** @column characters.created_at: Character creation timestamp. */
+      /** @column characters.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
-      /** @column characters.updated_at: Character last update timestamp. */
+      /** @column characters.updated_at: 마지막 수정 시간 */
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
@@ -68,29 +68,29 @@ export const publicTables = {
   episode_characters: {
     Row: z.object({
       id: z.uuid(),
-      /** @column episode_characters.episode_id: Episode id reference. */
+      /** @column episode_characters.episode_id: 에피소드 ID */
       episode_id: z.uuid(),
-      /** @column episode_characters.character_id: Character id reference. */
+      /** @column episode_characters.character_id: 캐릭터 ID */
       character_id: z.uuid(),
-      /** @column episode_characters.created_at: Join creation timestamp. */
+      /** @column episode_characters.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }),
     }).strict(),
     Insert: z.object({
       id: z.uuid().optional(),
-      /** @column episode_characters.episode_id: Episode id reference. */
+      /** @column episode_characters.episode_id: 에피소드 ID */
       episode_id: z.uuid(),
-      /** @column episode_characters.character_id: Character id reference. */
+      /** @column episode_characters.character_id: 캐릭터 ID */
       character_id: z.uuid(),
-      /** @column episode_characters.created_at: Join creation timestamp. */
+      /** @column episode_characters.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
     Update: z.object({
       id: z.uuid().optional(),
-      /** @column episode_characters.episode_id: Episode id reference. */
+      /** @column episode_characters.episode_id: 에피소드 ID */
       episode_id: z.uuid().optional(),
-      /** @column episode_characters.character_id: Character id reference. */
+      /** @column episode_characters.character_id: 캐릭터 ID */
       character_id: z.uuid().optional(),
-      /** @column episode_characters.created_at: Join creation timestamp. */
+      /** @column episode_characters.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
@@ -98,29 +98,29 @@ export const publicTables = {
   episode_locations: {
     Row: z.object({
       id: z.uuid(),
-      /** @column episode_locations.episode_id: Episode id reference. */
+      /** @column episode_locations.episode_id: 에피소드 ID */
       episode_id: z.uuid(),
-      /** @column episode_locations.location_id: Location id reference. */
+      /** @column episode_locations.location_id: 장소 ID */
       location_id: z.uuid(),
-      /** @column episode_locations.created_at: Join creation timestamp. */
+      /** @column episode_locations.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }),
     }).strict(),
     Insert: z.object({
       id: z.uuid().optional(),
-      /** @column episode_locations.episode_id: Episode id reference. */
+      /** @column episode_locations.episode_id: 에피소드 ID */
       episode_id: z.uuid(),
-      /** @column episode_locations.location_id: Location id reference. */
+      /** @column episode_locations.location_id: 장소 ID */
       location_id: z.uuid(),
-      /** @column episode_locations.created_at: Join creation timestamp. */
+      /** @column episode_locations.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
     Update: z.object({
       id: z.uuid().optional(),
-      /** @column episode_locations.episode_id: Episode id reference. */
+      /** @column episode_locations.episode_id: 에피소드 ID */
       episode_id: z.uuid().optional(),
-      /** @column episode_locations.location_id: Location id reference. */
+      /** @column episode_locations.location_id: 장소 ID */
       location_id: z.uuid().optional(),
-      /** @column episode_locations.created_at: Join creation timestamp. */
+      /** @column episode_locations.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
@@ -128,53 +128,53 @@ export const publicTables = {
   episodes: {
     Row: z.object({
       id: z.uuid(),
-      /** @column episodes.novel_id: Parent novel id for this episode. */
+      /** @column episodes.novel_id: 소설 ID */
       novel_id: z.uuid(),
-      /** @column episodes.episode_number: 1-based sequential episode number within a novel. */
+      /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
       episode_number: z.int(),
-      /** @column episodes.body: Episode body text. */
+      /** @column episodes.body: 에피소드 본문 */
       body: z.string(),
-      /** @column episodes.embedding: Optional embedding vector for the episode body as JSON array. */
+      /** @column episodes.embedding: 에피소드 본문의 임베딩 벡터 (JSON 배열 형식, 선택 사항) */
       embedding: z.unknown().nullable(),
-      /** @column episodes.embedding_model: Embedding model identifier used to generate embedding. */
+      /** @column episodes.embedding_model: 임베딩 생성에 사용된 모델 식별자 */
       embedding_model: z.string().nullable(),
-      /** @column episodes.created_at: Episode creation timestamp. */
+      /** @column episodes.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }),
-      /** @column episodes.updated_at: Episode last update timestamp. */
+      /** @column episodes.updated_at: 마지막 수정 시간 */
       updated_at: z.iso.datetime({ offset: true }),
     }).strict(),
     Insert: z.object({
       id: z.uuid().optional(),
-      /** @column episodes.novel_id: Parent novel id for this episode. */
+      /** @column episodes.novel_id: 소설 ID */
       novel_id: z.uuid(),
-      /** @column episodes.episode_number: 1-based sequential episode number within a novel. */
+      /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
       episode_number: z.int(),
-      /** @column episodes.body: Episode body text. */
+      /** @column episodes.body: 에피소드 본문 */
       body: z.string(),
-      /** @column episodes.embedding: Optional embedding vector for the episode body as JSON array. */
+      /** @column episodes.embedding: 에피소드 본문의 임베딩 벡터 (JSON 배열 형식, 선택 사항) */
       embedding: z.unknown().nullable().optional(),
-      /** @column episodes.embedding_model: Embedding model identifier used to generate embedding. */
+      /** @column episodes.embedding_model: 임베딩 생성에 사용된 모델 식별자 */
       embedding_model: z.string().nullable().optional(),
-      /** @column episodes.created_at: Episode creation timestamp. */
+      /** @column episodes.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
-      /** @column episodes.updated_at: Episode last update timestamp. */
+      /** @column episodes.updated_at: 마지막 수정 시간 */
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
     Update: z.object({
       id: z.uuid().optional(),
-      /** @column episodes.novel_id: Parent novel id for this episode. */
+      /** @column episodes.novel_id: 소설 ID */
       novel_id: z.uuid().optional(),
-      /** @column episodes.episode_number: 1-based sequential episode number within a novel. */
+      /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
       episode_number: z.int().optional(),
-      /** @column episodes.body: Episode body text. */
+      /** @column episodes.body: 에피소드 본문 */
       body: z.string().optional(),
-      /** @column episodes.embedding: Optional embedding vector for the episode body as JSON array. */
+      /** @column episodes.embedding: 에피소드 본문의 임베딩 벡터 (JSON 배열 형식, 선택 사항) */
       embedding: z.unknown().nullable().optional(),
-      /** @column episodes.embedding_model: Embedding model identifier used to generate embedding. */
+      /** @column episodes.embedding_model: 임베딩 생성에 사용된 모델 식별자 */
       embedding_model: z.string().nullable().optional(),
-      /** @column episodes.created_at: Episode creation timestamp. */
+      /** @column episodes.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
-      /** @column episodes.updated_at: Episode last update timestamp. */
+      /** @column episodes.updated_at: 마지막 수정 시간 */
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
@@ -182,41 +182,41 @@ export const publicTables = {
   locations: {
     Row: z.object({
       id: z.uuid(),
-      /** @column locations.novel_id: Parent novel id for this location. */
+      /** @column locations.novel_id: 소설 ID */
       novel_id: z.uuid(),
-      /** @column locations.name: Location name. */
+      /** @column locations.name: 장소 이름 */
       name: z.string(),
-      /** @column locations.description: Optional location description. */
+      /** @column locations.description: 장소 설명 (선택 사항) */
       description: z.string().nullable(),
-      /** @column locations.created_at: Location creation timestamp. */
+      /** @column locations.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }),
-      /** @column locations.updated_at: Location last update timestamp. */
+      /** @column locations.updated_at: 마지막 수정 시간 */
       updated_at: z.iso.datetime({ offset: true }),
     }).strict(),
     Insert: z.object({
       id: z.uuid().optional(),
-      /** @column locations.novel_id: Parent novel id for this location. */
+      /** @column locations.novel_id: 소설 ID */
       novel_id: z.uuid(),
-      /** @column locations.name: Location name. */
+      /** @column locations.name: 장소 이름 */
       name: z.string(),
-      /** @column locations.description: Optional location description. */
+      /** @column locations.description: 장소 설명 (선택 사항) */
       description: z.string().nullable().optional(),
-      /** @column locations.created_at: Location creation timestamp. */
+      /** @column locations.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
-      /** @column locations.updated_at: Location last update timestamp. */
+      /** @column locations.updated_at: 마지막 수정 시간 */
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
     Update: z.object({
       id: z.uuid().optional(),
-      /** @column locations.novel_id: Parent novel id for this location. */
+      /** @column locations.novel_id: 소설 ID */
       novel_id: z.uuid().optional(),
-      /** @column locations.name: Location name. */
+      /** @column locations.name: 장소 이름 */
       name: z.string().optional(),
-      /** @column locations.description: Optional location description. */
+      /** @column locations.description: 장소 설명 (선택 사항) */
       description: z.string().nullable().optional(),
-      /** @column locations.created_at: Location creation timestamp. */
+      /** @column locations.created_at: 생성 시간 */
       created_at: z.iso.datetime({ offset: true }).optional(),
-      /** @column locations.updated_at: Location last update timestamp. */
+      /** @column locations.updated_at: 마지막 수정 시간 */
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
@@ -239,8 +239,6 @@ export const publicTables = {
       append_prompt: z.string().nullable(),
       /** @column novels.updated_at: 소설 정보 마지막 수정 시각 */
       updated_at: z.iso.datetime({ offset: true }).nullable(),
-      /** @column novels.initial_seed: 1화 생성 시 사용할 초기 시드 (선택사항) */
-      initial_seed: z.string().nullable(),
       /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
       initial_plot_seeds: z.string().nullable(),
       /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
@@ -263,8 +261,6 @@ export const publicTables = {
       append_prompt: z.string().nullable().optional(),
       /** @column novels.updated_at: 소설 정보 마지막 수정 시각 */
       updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
-      /** @column novels.initial_seed: 1화 생성 시 사용할 초기 시드 (선택사항) */
-      initial_seed: z.string().nullable().optional(),
       /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
       initial_plot_seeds: z.string().nullable().optional(),
       /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
@@ -287,8 +283,6 @@ export const publicTables = {
       append_prompt: z.string().nullable().optional(),
       /** @column novels.updated_at: 소설 정보 마지막 수정 시각 */
       updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
-      /** @column novels.initial_seed: 1화 생성 시 사용할 초기 시드 (선택사항) */
-      initial_seed: z.string().nullable().optional(),
       /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
       initial_plot_seeds: z.string().nullable().optional(),
       /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */

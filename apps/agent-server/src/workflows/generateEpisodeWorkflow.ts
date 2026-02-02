@@ -18,7 +18,6 @@ import {
   upsertEpisodeCharacters,
   upsertEpisodeLocations,
   upsertLocations,
-  updateNovel,
 } from "../repositories/novelRepository";
 
 type WorkflowOptions = {

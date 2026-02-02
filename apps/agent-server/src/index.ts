@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const novelId = resolveNovelId();
   const result = await generateEpisodeWorkflow({ novelId });
 
-  console.log(
+  console.info(
     JSON.stringify(
       {
         episode_id: result.episode.id,

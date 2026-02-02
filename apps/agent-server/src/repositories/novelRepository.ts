@@ -1,6 +1,6 @@
+import type { Database } from "@fantasy-diary/shared/supabase/type";
 import type { PostgrestSingleResponse, SupabaseClient } from "@supabase/supabase-js";
 
-import type { Database } from "@fantasy-diary/shared/supabase/type";
 import { AgentError } from "../errors/agentError";
 
 export type NovelRow = Database["public"]["Tables"]["novels"]["Row"];
@@ -25,7 +25,7 @@ function ensureSingle<T>(
   if (response.error) {
     throw new AgentError({
       type: "DATABASE_ERROR",
-      code: errorCode as any,
+      code: errorCode as "QUERY_FAILED",
       message: message,
       details: {
         error: response.error.message,
@@ -36,7 +36,7 @@ function ensureSingle<T>(
   if (!response.data) {
     throw new AgentError({
       type: "DATABASE_ERROR",
-      code: errorCode as any,
+      code: errorCode as "QUERY_FAILED",
       message: message,
     });
   }
@@ -52,7 +52,7 @@ function ensureArray<T>(
   if (response.error) {
     throw new AgentError({
       type: "DATABASE_ERROR",
-      code: errorCode as any,
+      code: errorCode as "QUERY_FAILED",
       message: message,
       details: {
         error: response.error.message,
@@ -68,6 +68,7 @@ export async function fetchNovel(
   novelId: string
 ): Promise<NovelRow> {
   const response = await client.from("novels").select("*").eq("id", novelId).single();
+
   return ensureSingle(response, "QUERY_FAILED", "Failed to fetch novel");
 }
 
@@ -115,6 +116,7 @@ export async function insertEpisode(
   input: EpisodeInsert
 ): Promise<EpisodeRow> {
   const response = await client.from("episodes").insert(input).select("*").single();
+
   return ensureSingle(response, "INSERT_FAILED", "Failed to insert episode");
 }
 

@@ -1,7 +1,8 @@
 import { createSupabaseAdminClient } from "@fantasy-diary/shared/supabase";
+
 import {
-  deleteEpisodes,
   deleteCharacters,
+  deleteEpisodes,
   deleteLocations,
 } from "../repositories/novelRepository";
 

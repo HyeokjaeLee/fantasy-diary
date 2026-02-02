@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { z } from "zod";
+import type { z } from "zod";
 
 import { AgentError } from "../errors/agentError";
 import { withExponentialBackoff } from "./backoff";
@@ -82,6 +82,7 @@ function resolveUpstreamError(err: unknown): AgentError {
 function shouldRetryGemini(error: unknown, attempt: number, retries: number): boolean {
   const normalized = resolveUpstreamError(error);
   if (!normalized.retryable) return false;
+
   return attempt < retries;
 }
 
@@ -149,6 +150,7 @@ export async function generateJson<T>(
     const rawText = response.text ?? "";
     try {
       const json = parseJsonOrThrow(rawText);
+
       return params.schema.parse(json);
     } catch (error) {
       if (error instanceof AgentError) {
@@ -200,5 +202,6 @@ export async function embedText(
 
   const first = response.embeddings?.[0];
   if (!first || !Array.isArray(first.values)) return null;
+
   return first.values as number[];
 }

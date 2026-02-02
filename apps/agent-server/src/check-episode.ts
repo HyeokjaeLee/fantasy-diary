@@ -15,8 +15,8 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log("=== Generated Episode ===");
-  console.log(JSON.stringify(episode, null, 2));
+  console.info("=== Generated Episode ===");
+  console.info(JSON.stringify(episode, null, 2));
 
   // Fetch the novel details
   const { data: novel } = await client
@@ -25,8 +25,8 @@ async function main(): Promise<void> {
     .eq("id", "5653ed7f-a37f-4582-99c9-24651d5272b8")
     .single();
 
-  console.log("\n=== Novel Details ===");
-  console.log(JSON.stringify(novel, null, 2));
+  console.info("\n=== Novel Details ===");
+  console.info(JSON.stringify(novel, null, 2));
 }
 
 main().catch(console.error);

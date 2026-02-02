@@ -7,6 +7,7 @@ const __dirname = join(__filename, "..");
 
 function loadPrompt(filename: string): string {
   const filePath = join(__dirname, "..", "prompts", filename);
+
   return readFileSync(filePath, "utf-8").trim();
 }
 

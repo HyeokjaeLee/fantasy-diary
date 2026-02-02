@@ -17,6 +17,7 @@ function sleep(ms: number): Promise<void> {
 function withJitter(value: number, jitterRatio: number): number {
   if (jitterRatio <= 0) return value;
   const jitter = value * jitterRatio;
+
   return value + (Math.random() * 2 - 1) * jitter;
 }
 

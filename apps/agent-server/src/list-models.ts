@@ -3,16 +3,18 @@ import { createGenAIClient } from "./lib/genai";
 async function main(): Promise<void> {
   const client = createGenAIClient();
 
-  console.log("Listing available models...");
+  console.info("Listing available models...");
   const pager = await client.models.list();
 
   for await (const model of pager) {
-    if (model.name.includes("flash") || model.name.includes("gemini")) {
-      console.log(`Model: ${model.name}`);
-      if (model.supportedGenerationMethods) {
-        console.log(`  Supported methods: ${model.supportedGenerationMethods.join(", ")}`);
+    if (model.name?.includes("flash") || model.name?.includes("gemini")) {
+      console.info(`Model: ${model.name}`);
+      if ("supportedGenerationMethods" in model && model.supportedGenerationMethods) {
+        console.info(
+          `  Supported methods: ${(model.supportedGenerationMethods as string[]).join(", ")}`
+        );
       }
-      console.log();
+      console.info();
     }
   }
 }

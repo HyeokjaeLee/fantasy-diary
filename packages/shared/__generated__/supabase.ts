@@ -17,54 +17,54 @@ export type Database = {
       /** @table characters: Characters that appear in a novel. */
       characters: {
         Row: {
-          /** @column characters.created_at: Character creation timestamp. */
+          /** @column characters.created_at: 생성 시간 */
           created_at: string
-          /** @column characters.description: Optional longer character description. */
+          /** @column characters.description: 캐릭터 상세 설명 (선택 사항) */
           description: string | null
           id: string
-          /** @column characters.name: Character name. */
+          /** @column characters.name: 캐릭터 이름 */
           name: string
-          /** @column characters.novel_id: Parent novel id for this character. */
+          /** @column characters.novel_id: 소설 ID */
           novel_id: string
-          /** @column characters.personality: Optional personality description for the character. */
+          /** @column characters.personality: 캐릭터 성격 설명 (선택 사항) */
           personality: string | null
-          /** @column characters.traits: Optional concise traits for the character. */
+          /** @column characters.traits: 캐릭터 특징 (선택 사항) */
           traits: string | null
-          /** @column characters.updated_at: Character last update timestamp. */
+          /** @column characters.updated_at: 마지막 수정 시간 */
           updated_at: string
         }
         Insert: {
-          /** @column characters.created_at: Character creation timestamp. */
+          /** @column characters.created_at: 생성 시간 */
           created_at?: string
-          /** @column characters.description: Optional longer character description. */
+          /** @column characters.description: 캐릭터 상세 설명 (선택 사항) */
           description?: string | null
           id?: string
-          /** @column characters.name: Character name. */
+          /** @column characters.name: 캐릭터 이름 */
           name: string
-          /** @column characters.novel_id: Parent novel id for this character. */
+          /** @column characters.novel_id: 소설 ID */
           novel_id: string
-          /** @column characters.personality: Optional personality description for the character. */
+          /** @column characters.personality: 캐릭터 성격 설명 (선택 사항) */
           personality?: string | null
-          /** @column characters.traits: Optional concise traits for the character. */
+          /** @column characters.traits: 캐릭터 특징 (선택 사항) */
           traits?: string | null
-          /** @column characters.updated_at: Character last update timestamp. */
+          /** @column characters.updated_at: 마지막 수정 시간 */
           updated_at?: string
         }
         Update: {
-          /** @column characters.created_at: Character creation timestamp. */
+          /** @column characters.created_at: 생성 시간 */
           created_at?: string
-          /** @column characters.description: Optional longer character description. */
+          /** @column characters.description: 캐릭터 상세 설명 (선택 사항) */
           description?: string | null
           id?: string
-          /** @column characters.name: Character name. */
+          /** @column characters.name: 캐릭터 이름 */
           name?: string
-          /** @column characters.novel_id: Parent novel id for this character. */
+          /** @column characters.novel_id: 소설 ID */
           novel_id?: string
-          /** @column characters.personality: Optional personality description for the character. */
+          /** @column characters.personality: 캐릭터 성격 설명 (선택 사항) */
           personality?: string | null
-          /** @column characters.traits: Optional concise traits for the character. */
+          /** @column characters.traits: 캐릭터 특징 (선택 사항) */
           traits?: string | null
-          /** @column characters.updated_at: Character last update timestamp. */
+          /** @column characters.updated_at: 마지막 수정 시간 */
           updated_at?: string
         }
         Relationships: [
@@ -80,29 +80,29 @@ export type Database = {
       /** @table episode_characters: Join table linking episodes and characters. */
       episode_characters: {
         Row: {
-          /** @column episode_characters.character_id: Character id reference. */
+          /** @column episode_characters.character_id: 캐릭터 ID */
           character_id: string
-          /** @column episode_characters.created_at: Join creation timestamp. */
+          /** @column episode_characters.created_at: 생성 시간 */
           created_at: string
-          /** @column episode_characters.episode_id: Episode id reference. */
+          /** @column episode_characters.episode_id: 에피소드 ID */
           episode_id: string
           id: string
         }
         Insert: {
-          /** @column episode_characters.character_id: Character id reference. */
+          /** @column episode_characters.character_id: 캐릭터 ID */
           character_id: string
-          /** @column episode_characters.created_at: Join creation timestamp. */
+          /** @column episode_characters.created_at: 생성 시간 */
           created_at?: string
-          /** @column episode_characters.episode_id: Episode id reference. */
+          /** @column episode_characters.episode_id: 에피소드 ID */
           episode_id: string
           id?: string
         }
         Update: {
-          /** @column episode_characters.character_id: Character id reference. */
+          /** @column episode_characters.character_id: 캐릭터 ID */
           character_id?: string
-          /** @column episode_characters.created_at: Join creation timestamp. */
+          /** @column episode_characters.created_at: 생성 시간 */
           created_at?: string
-          /** @column episode_characters.episode_id: Episode id reference. */
+          /** @column episode_characters.episode_id: 에피소드 ID */
           episode_id?: string
           id?: string
         }
@@ -126,30 +126,30 @@ export type Database = {
       /** @table episode_locations: Join table linking episodes and locations. */
       episode_locations: {
         Row: {
-          /** @column episode_locations.created_at: Join creation timestamp. */
+          /** @column episode_locations.created_at: 생성 시간 */
           created_at: string
-          /** @column episode_locations.episode_id: Episode id reference. */
+          /** @column episode_locations.episode_id: 에피소드 ID */
           episode_id: string
           id: string
-          /** @column episode_locations.location_id: Location id reference. */
+          /** @column episode_locations.location_id: 장소 ID */
           location_id: string
         }
         Insert: {
-          /** @column episode_locations.created_at: Join creation timestamp. */
+          /** @column episode_locations.created_at: 생성 시간 */
           created_at?: string
-          /** @column episode_locations.episode_id: Episode id reference. */
+          /** @column episode_locations.episode_id: 에피소드 ID */
           episode_id: string
           id?: string
-          /** @column episode_locations.location_id: Location id reference. */
+          /** @column episode_locations.location_id: 장소 ID */
           location_id: string
         }
         Update: {
-          /** @column episode_locations.created_at: Join creation timestamp. */
+          /** @column episode_locations.created_at: 생성 시간 */
           created_at?: string
-          /** @column episode_locations.episode_id: Episode id reference. */
+          /** @column episode_locations.episode_id: 에피소드 ID */
           episode_id?: string
           id?: string
-          /** @column episode_locations.location_id: Location id reference. */
+          /** @column episode_locations.location_id: 장소 ID */
           location_id?: string
         }
         Relationships: [
@@ -172,54 +172,54 @@ export type Database = {
       /** @table episodes: Individual episodes for a novel series. */
       episodes: {
         Row: {
-          /** @column episodes.body: Episode body text. */
+          /** @column episodes.body: 에피소드 본문 */
           body: string
-          /** @column episodes.created_at: Episode creation timestamp. */
+          /** @column episodes.created_at: 생성 시간 */
           created_at: string
-          /** @column episodes.embedding: Optional embedding vector for the episode body as JSON array. */
+          /** @column episodes.embedding: 에피소드 본문의 임베딩 벡터 (JSON 배열 형식, 선택 사항) */
           embedding: Json | null
-          /** @column episodes.embedding_model: Embedding model identifier used to generate embedding. */
+          /** @column episodes.embedding_model: 임베딩 생성에 사용된 모델 식별자 */
           embedding_model: string | null
-          /** @column episodes.episode_number: 1-based sequential episode number within a novel. */
+          /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
           episode_number: number
           id: string
-          /** @column episodes.novel_id: Parent novel id for this episode. */
+          /** @column episodes.novel_id: 소설 ID */
           novel_id: string
-          /** @column episodes.updated_at: Episode last update timestamp. */
+          /** @column episodes.updated_at: 마지막 수정 시간 */
           updated_at: string
         }
         Insert: {
-          /** @column episodes.body: Episode body text. */
+          /** @column episodes.body: 에피소드 본문 */
           body: string
-          /** @column episodes.created_at: Episode creation timestamp. */
+          /** @column episodes.created_at: 생성 시간 */
           created_at?: string
-          /** @column episodes.embedding: Optional embedding vector for the episode body as JSON array. */
+          /** @column episodes.embedding: 에피소드 본문의 임베딩 벡터 (JSON 배열 형식, 선택 사항) */
           embedding?: Json | null
-          /** @column episodes.embedding_model: Embedding model identifier used to generate embedding. */
+          /** @column episodes.embedding_model: 임베딩 생성에 사용된 모델 식별자 */
           embedding_model?: string | null
-          /** @column episodes.episode_number: 1-based sequential episode number within a novel. */
+          /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
           episode_number: number
           id?: string
-          /** @column episodes.novel_id: Parent novel id for this episode. */
+          /** @column episodes.novel_id: 소설 ID */
           novel_id: string
-          /** @column episodes.updated_at: Episode last update timestamp. */
+          /** @column episodes.updated_at: 마지막 수정 시간 */
           updated_at?: string
         }
         Update: {
-          /** @column episodes.body: Episode body text. */
+          /** @column episodes.body: 에피소드 본문 */
           body?: string
-          /** @column episodes.created_at: Episode creation timestamp. */
+          /** @column episodes.created_at: 생성 시간 */
           created_at?: string
-          /** @column episodes.embedding: Optional embedding vector for the episode body as JSON array. */
+          /** @column episodes.embedding: 에피소드 본문의 임베딩 벡터 (JSON 배열 형식, 선택 사항) */
           embedding?: Json | null
-          /** @column episodes.embedding_model: Embedding model identifier used to generate embedding. */
+          /** @column episodes.embedding_model: 임베딩 생성에 사용된 모델 식별자 */
           embedding_model?: string | null
-          /** @column episodes.episode_number: 1-based sequential episode number within a novel. */
+          /** @column episodes.episode_number: 에피소드 번호 (1부터 시작) */
           episode_number?: number
           id?: string
-          /** @column episodes.novel_id: Parent novel id for this episode. */
+          /** @column episodes.novel_id: 소설 ID */
           novel_id?: string
-          /** @column episodes.updated_at: Episode last update timestamp. */
+          /** @column episodes.updated_at: 마지막 수정 시간 */
           updated_at?: string
         }
         Relationships: [
@@ -235,42 +235,42 @@ export type Database = {
       /** @table locations: Locations that appear in a novel. */
       locations: {
         Row: {
-          /** @column locations.created_at: Location creation timestamp. */
+          /** @column locations.created_at: 생성 시간 */
           created_at: string
-          /** @column locations.description: Optional location description. */
+          /** @column locations.description: 장소 설명 (선택 사항) */
           description: string | null
           id: string
-          /** @column locations.name: Location name. */
+          /** @column locations.name: 장소 이름 */
           name: string
-          /** @column locations.novel_id: Parent novel id for this location. */
+          /** @column locations.novel_id: 소설 ID */
           novel_id: string
-          /** @column locations.updated_at: Location last update timestamp. */
+          /** @column locations.updated_at: 마지막 수정 시간 */
           updated_at: string
         }
         Insert: {
-          /** @column locations.created_at: Location creation timestamp. */
+          /** @column locations.created_at: 생성 시간 */
           created_at?: string
-          /** @column locations.description: Optional location description. */
+          /** @column locations.description: 장소 설명 (선택 사항) */
           description?: string | null
           id?: string
-          /** @column locations.name: Location name. */
+          /** @column locations.name: 장소 이름 */
           name: string
-          /** @column locations.novel_id: Parent novel id for this location. */
+          /** @column locations.novel_id: 소설 ID */
           novel_id: string
-          /** @column locations.updated_at: Location last update timestamp. */
+          /** @column locations.updated_at: 마지막 수정 시간 */
           updated_at?: string
         }
         Update: {
-          /** @column locations.created_at: Location creation timestamp. */
+          /** @column locations.created_at: 생성 시간 */
           created_at?: string
-          /** @column locations.description: Optional location description. */
+          /** @column locations.description: 장소 설명 (선택 사항) */
           description?: string | null
           id?: string
-          /** @column locations.name: Location name. */
+          /** @column locations.name: 장소 이름 */
           name?: string
-          /** @column locations.novel_id: Parent novel id for this location. */
+          /** @column locations.novel_id: 소설 ID */
           novel_id?: string
-          /** @column locations.updated_at: Location last update timestamp. */
+          /** @column locations.updated_at: 마지막 수정 시간 */
           updated_at?: string
         }
         Relationships: [
@@ -296,8 +296,6 @@ export type Database = {
           id: string
           /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
           initial_plot_seeds: string | null
-          /** @column novels.initial_seed: 1화 생성 시 사용할 초기 시드 (선택사항) */
-          initial_seed: string | null
           /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
           plot_seeds_resolved: boolean | null
           /** @column novels.status: 소설 상태(기본값 'active') */
@@ -320,8 +318,6 @@ export type Database = {
           id?: string
           /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
           initial_plot_seeds?: string | null
-          /** @column novels.initial_seed: 1화 생성 시 사용할 초기 시드 (선택사항) */
-          initial_seed?: string | null
           /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
           plot_seeds_resolved?: boolean | null
           /** @column novels.status: 소설 상태(기본값 'active') */
@@ -344,8 +340,6 @@ export type Database = {
           id?: string
           /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
           initial_plot_seeds?: string | null
-          /** @column novels.initial_seed: 1화 생성 시 사용할 초기 시드 (선택사항) */
-          initial_seed?: string | null
           /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
           plot_seeds_resolved?: boolean | null
           /** @column novels.status: 소설 상태(기본값 'active') */
