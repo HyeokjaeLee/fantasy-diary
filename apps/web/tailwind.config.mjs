@@ -3,6 +3,9 @@ const config = {
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        'noto-sans-kr': ['var(--font-noto-sans-kr)', 'sans-serif'],
+      },
       colors: {
         ink: {
           950: '#0f1115',

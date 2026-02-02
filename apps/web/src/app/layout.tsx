@@ -1,18 +1,14 @@
 import type { Metadata } from 'next';
-import { Cinzel, Spectral } from 'next/font/google';
+import { Noto_Sans_KR } from 'next/font/google';
 
 import './globals.css';
 
-const displayFont = Cinzel({
+const notoSansKR = Noto_Sans_KR({
   subsets: ['latin'],
-  variable: '--font-cinzel',
-  weight: ['500', '600', '700'],
-});
-
-const bodyFont = Spectral({
-  subsets: ['latin'],
-  variable: '--font-spectral',
+  variable: '--font-noto-sans-kr',
   weight: ['400', '500', '600', '700'],
+  display: 'swap',
+  preload: true,
 });
 
 export const metadata: Metadata = {
@@ -22,8 +18,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" className={`${displayFont.variable} ${bodyFont.variable}`}>
-      <body className="font-body min-h-screen bg-parchment-50 text-ink-900">
+    <html lang="ko" className={notoSansKR.variable}>
+      <body className="font-noto-sans-kr min-h-screen bg-parchment-50 text-ink-900">
         <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(196,106,57,0.08),transparent_48%),radial-gradient(circle_at_20%_80%,rgba(90,123,106,0.12),transparent_45%)]" />
         <div className="relative flex min-h-screen flex-col">
           <header className="border-b border-ink-950/10 bg-parchment-50/80 backdrop-blur">

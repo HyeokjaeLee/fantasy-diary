@@ -1,14 +1,14 @@
 import { createSupabasePublishableClient } from '@fantasy-diary/shared/supabase';
 import type { Tables } from '@fantasy-diary/shared/supabase/type';
 
-export type Episode = Tables<'episodes'>;
+export type Novel = Tables<'novels'>;
 
-export async function fetchRecentEpisodes() {
+export async function fetchRecentNovels() {
   const supabase = createSupabasePublishableClient();
 
   const { data, error } = await supabase
-    .from('episodes')
-    .select('id, novel_id, episode_number, body, created_at')
+    .from('novels')
+    .select('id, title, genre, status, created_at')
     .order('created_at', { ascending: false })
     .limit(24);
 
@@ -19,13 +19,13 @@ export async function fetchRecentEpisodes() {
   return data ?? [];
 }
 
-export async function fetchEpisodeDetail(episodeId: string) {
+export async function fetchNovelDetail(novelId: string) {
   const supabase = createSupabasePublishableClient();
 
   const { data, error } = await supabase
-    .from('episodes')
-    .select('id, novel_id, episode_number, body, created_at')
-    .eq('id', episodeId)
+    .from('novels')
+    .select('*')
+    .eq('id', novelId)
     .single();
 
   if (error) {

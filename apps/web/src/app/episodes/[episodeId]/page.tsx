@@ -8,11 +8,12 @@ import { fetchEpisodeDetail } from '@/lib/novels';
 export const dynamic = 'force-dynamic';
 
 type EpisodeDetailPageProps = {
-  params: { episodeId: string };
+  params: Promise<{ episodeId: string }>;
 };
 
 export default async function EpisodeDetailPage({ params }: EpisodeDetailPageProps) {
-  const episode = await fetchEpisodeDetail(params.episodeId);
+  const { episodeId } = await params;
+  const episode = await fetchEpisodeDetail(episodeId);
 
   if (!episode) {
     notFound();
