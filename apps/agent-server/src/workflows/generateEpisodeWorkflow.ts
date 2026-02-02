@@ -18,6 +18,7 @@ import {
   upsertEpisodeCharacters,
   upsertEpisodeLocations,
   upsertLocations,
+  updateNovel,
 } from "../repositories/novelRepository";
 
 type WorkflowOptions = {
@@ -92,6 +93,26 @@ function buildLocationInsert(
   }));
 }
 
+function formatInitialPlotSeeds(novel: NovelRow): string | undefined {
+  if (!novel.initial_plot_seeds || novel.plot_seeds_resolved) {
+    return undefined;
+  }
+
+  try {
+    const seeds = typeof novel.initial_plot_seeds === 'string'
+      ? JSON.parse(novel.initial_plot_seeds)
+      : novel.initial_plot_seeds;
+
+    if (!Array.isArray(seeds) || seeds.length === 0) {
+      return undefined;
+    }
+
+    return seeds.map((seed, index) => `${index + 1}. ${seed}`).join('\n');
+  } catch {
+    return undefined;
+  }
+}
+
 export async function generateEpisodeWorkflow(
   options: WorkflowOptions
 ): Promise<WorkflowResult> {
@@ -108,6 +129,8 @@ export async function generateEpisodeWorkflow(
     episodes,
     options.ragEpisodeCount ?? DEFAULT_RAG_COUNT
   );
+
+  const initialPlotSeeds = formatInitialPlotSeeds(novel);
 
   const model = getModelFromEnv();
   const aiClient = createGenAIClient();
@@ -129,6 +152,7 @@ export async function generateEpisodeWorkflow(
         characters,
         locations,
         feedback,
+        initialPlotSeeds,
       });
     } catch (error) {
       if (error instanceof AgentError) {

@@ -79,6 +79,10 @@ const guidanceByTypeAndCode = {
       description: "Database update failed.",
       suggestedFix: "Check filters/constraints and retry.",
     },
+    DELETE_FAILED: {
+      description: "Database delete failed.",
+      suggestedFix: "Check filters/constraints and retry.",
+    },
   },
   UNEXPECTED_ERROR: {
     UNKNOWN: {

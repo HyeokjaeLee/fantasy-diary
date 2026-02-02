@@ -9,6 +9,8 @@ ${storyBible}
 
 추가 프롬프트: ${appendPrompt}
 
+${initialPlotSeeds}
+
 기존 캐릭터:
 ${characters}
 

@@ -294,6 +294,12 @@ export type Database = {
           genre: string
           /** @column novels.id: 소설 고유 ID (UUID) */
           id: string
+          /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
+          initial_plot_seeds: string | null
+          /** @column novels.initial_seed: 1화 생성 시 사용할 초기 시드 (선택사항) */
+          initial_seed: string | null
+          /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
+          plot_seeds_resolved: boolean | null
           /** @column novels.status: 소설 상태(기본값 'active') */
           status: string
           /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블 */
@@ -312,6 +318,12 @@ export type Database = {
           genre: string
           /** @column novels.id: 소설 고유 ID (UUID) */
           id?: string
+          /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
+          initial_plot_seeds?: string | null
+          /** @column novels.initial_seed: 1화 생성 시 사용할 초기 시드 (선택사항) */
+          initial_seed?: string | null
+          /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
+          plot_seeds_resolved?: boolean | null
           /** @column novels.status: 소설 상태(기본값 'active') */
           status?: string
           /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블 */
@@ -330,6 +342,12 @@ export type Database = {
           genre?: string
           /** @column novels.id: 소설 고유 ID (UUID) */
           id?: string
+          /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
+          initial_plot_seeds?: string | null
+          /** @column novels.initial_seed: 1화 생성 시 사용할 초기 시드 (선택사항) */
+          initial_seed?: string | null
+          /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
+          plot_seeds_resolved?: boolean | null
           /** @column novels.status: 소설 상태(기본값 'active') */
           status?: string
           /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블 */

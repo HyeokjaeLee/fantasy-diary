@@ -19,13 +19,13 @@ export type EpisodeLocationInsert =
 
 function ensureSingle<T>(
   response: PostgrestSingleResponse<T>,
-  errorCode: "QUERY_FAILED" | "INSERT_FAILED" | "UPDATE_FAILED",
+  errorCode: "QUERY_FAILED" | "INSERT_FAILED" | "UPDATE_FAILED" | "DELETE_FAILED",
   message: string
 ): T {
   if (response.error) {
     throw new AgentError({
       type: "DATABASE_ERROR",
-      code: errorCode,
+      code: errorCode as any,
       message: message,
       details: {
         error: response.error.message,
@@ -36,7 +36,7 @@ function ensureSingle<T>(
   if (!response.data) {
     throw new AgentError({
       type: "DATABASE_ERROR",
-      code: errorCode,
+      code: errorCode as any,
       message: message,
     });
   }
@@ -46,13 +46,13 @@ function ensureSingle<T>(
 
 function ensureArray<T>(
   response: PostgrestSingleResponse<T[]>,
-  errorCode: "QUERY_FAILED" | "INSERT_FAILED" | "UPDATE_FAILED",
+  errorCode: "QUERY_FAILED" | "INSERT_FAILED" | "UPDATE_FAILED" | "DELETE_FAILED",
   message: string
 ): T[] {
   if (response.error) {
     throw new AgentError({
       type: "DATABASE_ERROR",
-      code: errorCode,
+      code: errorCode as any,
       message: message,
       details: {
         error: response.error.message,
@@ -172,4 +172,84 @@ export async function upsertEpisodeLocations(
     .select("id");
 
   ensureArray(response, "INSERT_FAILED", "Failed to upsert episode locations");
+}
+
+export type NovelUpdate = Database["public"]["Tables"]["novels"]["Update"];
+
+export async function updateNovel(
+  client: SupabaseClient<Database>,
+  novelId: string,
+  updates: NovelUpdate
+): Promise<NovelRow> {
+  const response = await client
+    .from("novels")
+    .update(updates)
+    .eq("id", novelId)
+    .select("*")
+    .single();
+
+  return ensureSingle(response, "UPDATE_FAILED", "Failed to update novel");
+}
+
+export async function deleteEpisodes(
+  client: SupabaseClient<Database>,
+  novelId: string
+): Promise<void> {
+  const response = await client
+    .from("episodes")
+    .delete()
+    .eq("novel_id", novelId);
+
+  if (response.error) {
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "DELETE_FAILED",
+      message: "Failed to delete episodes",
+      details: {
+        error: response.error.message,
+      },
+    });
+  }
+}
+
+export async function deleteCharacters(
+  client: SupabaseClient<Database>,
+  novelId: string
+): Promise<void> {
+  const response = await client
+    .from("characters")
+    .delete()
+    .eq("novel_id", novelId);
+
+  if (response.error) {
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "DELETE_FAILED",
+      message: "Failed to delete characters",
+      details: {
+        error: response.error.message,
+      },
+    });
+  }
+}
+
+export async function deleteLocations(
+  client: SupabaseClient<Database>,
+  novelId: string
+): Promise<void> {
+  const response = await client
+    .from("locations")
+    .delete()
+    .eq("novel_id", novelId);
+
+  if (response.error) {
+    throw new AgentError({
+      type: "DATABASE_ERROR",
+      code: "DELETE_FAILED",
+      message: "Failed to delete locations",
+      details: {
+        error: response.error.message,
+      },
+    });
+  }
 }

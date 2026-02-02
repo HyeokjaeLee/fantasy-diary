@@ -4,6 +4,7 @@ import { generateJson } from "../lib/genai";
 import {
   loadWriterPromptTemplate,
   loadWriterSystemPrompt,
+  loadInitialPlotSeeds,
 } from "../lib/prompts";
 import type {
   CharacterRow,
@@ -43,6 +44,7 @@ type WriterInput = {
   characters: CharacterRow[];
   locations: LocationRow[];
   feedback?: string;
+  initialPlotSeeds?: string;
 };
 
 function truncateText(text: string, limit: number): string {
@@ -92,6 +94,11 @@ export class WriterAgent {
   async generate(input: WriterInput): Promise<WriterResult> {
     const systemInstruction = loadWriterSystemPrompt();
 
+    let initialPlotSeedsSection = "";
+    if (input.initialPlotSeeds) {
+      initialPlotSeedsSection = loadInitialPlotSeeds().replace("${initialPlotSeeds}", input.initialPlotSeeds);
+    }
+
     const promptTemplate = loadWriterPromptTemplate();
     const prompt = promptTemplate
       .replace("${title}", input.novel.title)
@@ -99,6 +106,7 @@ export class WriterAgent {
       .replace("${episodeNumber}", String(input.episodeNumber))
       .replace("${storyBible}", input.novel.story_bible)
       .replace("${appendPrompt}", input.novel.append_prompt ?? "(없음)")
+      .replace("${initialPlotSeeds}", initialPlotSeedsSection)
       .replace("${characters}", formatCharacters(input.characters))
       .replace("${locations}", formatLocations(input.locations))
       .replace("${recentEpisodes}", formatEpisodeContext(input.episodes))

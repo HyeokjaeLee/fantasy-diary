@@ -25,3 +25,7 @@ export function loadReviewerSystemPrompt(): string {
 export function loadReviewerPromptTemplate(): string {
   return loadPrompt("reviewer-prompt.md");
 }
+
+export function loadInitialPlotSeeds(): string {
+  return loadPrompt("initial-plot-seeds.md");
+}
