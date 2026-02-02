@@ -1,0 +1,135 @@
+name: Deploy Agent Server to Cloud Run Jobs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/agent-server/**'
+      - 'packages/shared/**'
+      - '.github/workflows/deploy-agent-server.yml'
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+  REGION: ${{ vars.GCP_REGION || 'asia-northeast3' }}
+  JOB_NAME: agent-server
+  ARTIFACT_REGISTRY: ${{ vars.ARTIFACT_REGISTRY || '${{ vars.GCP_PROJECT_ID }}-docker.pkg.dev' }}
+  IMAGE_NAME: agent-server
+  IMAGE: ${{ vars.ARTIFACT_REGISTRY || '${{ vars.GCP_PROJECT_ID }}-docker.pkg.dev' }}/${{ vars.GCP_PROJECT_ID }}/agent-server/agent-server:${{ github.sha }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Google Auth
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: access_token
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.ARTIFACT_REGISTRY }} --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/agent-server/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}
+            ${{ env.ARTIFACT_REGISTRY }}/${{ env.PROJECT_ID }}/${{ env.IMAGE_NAME }}/${{ env.IMAGE_NAME }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Deploy to Cloud Run Job
+        run: |
+          # Check if job exists
+          JOB_EXISTS=$(gcloud run jobs list \
+            --region=${{ env.REGION }} \
+            --format="value(name)" \
+            --filter="name:${{ env.JOB_NAME }}" \
+            2>/dev/null || echo "")
+
+          if [ -n "$JOB_EXISTS" ]; then
+            echo "Updating existing Cloud Run Job: ${{ env.JOB_NAME }}"
+            gcloud run jobs update ${{ env.JOB_NAME }} \
+              --region=${{ env.REGION }} \
+              --image=${{ env.IMAGE }} \
+              --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
+              --set-env-vars=GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }} \
+              --set-env-vars=GEMINI_MODEL=${{ vars.GEMINI_MODEL }} \
+              --set-env-vars=GEMINI_EMBEDDING_MODEL=${{ vars.GEMINI_EMBEDDING_MODEL }} \
+              --set-env-vars=SUPABASE_PROJECT_ID=${{ secrets.SUPABASE_PROJECT_ID }} \
+              --set-env-vars=SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }} \
+              --set-env-vars=SUPABASE_SECRET_KEY=${{ secrets.SUPABASE_SECRET_KEY }} \
+              --set-env-vars=NODE_ENV=production \
+              --cpu=2 \
+              --memory=512Mi \
+              --timeout=3600s \
+              --task-timeout=3500s \
+              --max-retries=3 \
+              --quiet
+          else
+            echo "Creating new Cloud Run Job: ${{ env.JOB_NAME }}"
+            gcloud run jobs create ${{ env.JOB_NAME }} \
+              --region=${{ env.REGION }} \
+              --image=${{ env.IMAGE }} \
+              --set-env-vars=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }} \
+              --set-env-vars=GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }} \
+              --set-env-vars=GEMINI_MODEL=${{ vars.GEMINI_MODEL }} \
+              --set-env-vars=GEMINI_EMBEDDING_MODEL=${{ vars.GEMINI_EMBEDDING_MODEL }} \
+              --set-env-vars=SUPABASE_PROJECT_ID=${{ secrets.SUPABASE_PROJECT_ID }} \
+              --set-env-vars=SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }} \
+              --set-env-vars=SUPABASE_SECRET_KEY=${{ secrets.SUPABASE_SECRET_KEY }} \
+              --set-env-vars=NODE_ENV=production \
+              --cpu=2 \
+              --memory=512Mi \
+              --timeout=3600s \
+              --task-timeout=3500s \
+              --max-retries=3 \
+              --quiet
+          fi
+
+      - name: Get Job URL
+        id: job-url
+        run: |
+          JOB_URL=$(gcloud run jobs describe ${{ env.JOB_NAME }} \
+            --region=${{ env.REGION }} \
+            --format="value(url)")
+          echo "url=$JOB_URL" >> $GITHUB_OUTPUT
+          echo "Job URL: $JOB_URL"
+
+      - name: Deployment Summary
+        run: |
+          echo "### Deployment Successful! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Job Name:** ${{ env.JOB_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Region:** ${{ env.REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.IMAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Job URL:** ${{ steps.job-url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "#### Execute the job:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "gcloud run jobs execute ${{ env.JOB_NAME }} --region=${{ env.REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
