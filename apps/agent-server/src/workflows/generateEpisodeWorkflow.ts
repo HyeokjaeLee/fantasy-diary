@@ -33,7 +33,7 @@ type WorkflowResult = {
 
 const DEFAULT_REVIEW_LOOPS = 7;
 const DEFAULT_RAG_COUNT = 2;
-const DEFAULT_MODEL = "gemini-2.5-flash";
+const DEFAULT_MODEL = "gemini-3-flash-preview";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-004";
 
 function getModelFromEnv(): string {
