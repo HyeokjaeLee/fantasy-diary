@@ -42,7 +42,7 @@ function formatEpisodeContext(episodes: EpisodeRow[]): string {
 
   return episodes
     .map((episode) => {
-      const body = truncateText(episode.body, 1000);
+      const body = truncateText(episode.body, 1600);
 
       return `Episode ${episode.episode_number}: ${body}`;
     })
