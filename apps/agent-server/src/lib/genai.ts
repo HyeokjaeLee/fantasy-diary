@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { assert } from "es-toolkit/util";
 import type { z } from "zod";
 
 import { AgentError } from "../errors/agentError";
@@ -28,19 +29,9 @@ const DEFAULT_RETRY_OPTIONS = {
   jitterRatio: 0.2,
 };
 
-function getEnv(key: string): string | undefined {
-  return process.env[key];
-}
-
 export function createGenAIClient(): GoogleGenAI {
-  const apiKey = getEnv("GEMINI_API_KEY") ?? getEnv("GOOGLE_API_KEY");
-  if (!apiKey) {
-    throw new AgentError({
-      type: "VALIDATION_ERROR",
-      code: "REQUIRED",
-      message: "Missing required env: GEMINI_API_KEY",
-    });
-  }
+  const apiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY;
+  assert(apiKey, "Missing required env: GEMINI_API_KEY or GOOGLE_API_KEY");
 
   return new GoogleGenAI({ apiKey });
 }

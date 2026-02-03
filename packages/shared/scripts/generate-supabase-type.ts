@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 
 import { SQL } from "bun";
+import { assert } from "es-toolkit/util";
 
 type TableCommentRow = {
   table_name: string;
@@ -51,7 +52,10 @@ function insertTableCommentJSDoc(params: {
 
   let source = params.source;
 
-  const tableHeaderRe = new RegExp(`^(\\s+)${escapeForRegExp(tableName)}: \\{\\s*$`, "m");
+  const tableHeaderRe = new RegExp(
+    `^(\\s+)${escapeForRegExp(tableName)}: \\{\\s*$`,
+    "m"
+  );
   const tableHeaderMatch = tableHeaderRe.exec(source);
   if (!tableHeaderMatch) return source;
 
@@ -61,14 +65,19 @@ function insertTableCommentJSDoc(params: {
   const tableCommentLine = `${tableIndent}/** ${tableTag}: ${tableComment} */\n`;
 
   if (!previousLineIncludesTag(source, tableHeaderIndex, tableTag)) {
-    source = source.slice(0, tableHeaderIndex) + tableCommentLine + source.slice(tableHeaderIndex);
+    source =
+      source.slice(0, tableHeaderIndex) +
+      tableCommentLine +
+      source.slice(tableHeaderIndex);
   }
 
   return source;
 }
 
-function findMatchingBraceIndex(source: string, openBraceIndex: number): number | null {
-
+function findMatchingBraceIndex(
+  source: string,
+  openBraceIndex: number
+): number | null {
   let depth = 0;
   for (let i = openBraceIndex; i < source.length; i++) {
     const ch = source[i];
@@ -117,7 +126,10 @@ function replaceNamedObjectBlock(params: {
   name: string;
   transform: (block: string) => string;
 }): string {
-  const headerRe = new RegExp(`^(\\s+)${escapeForRegExp(params.name)}: \\{\\s*$`, "m");
+  const headerRe = new RegExp(
+    `^(\\s+)${escapeForRegExp(params.name)}: \\{\\s*$`,
+    "m"
+  );
   const headerMatch = headerRe.exec(params.source);
   if (!headerMatch) return params.source;
 
@@ -151,10 +163,16 @@ function insertColumnCommentsJSDoc(params: {
   const tableOpenBraceIndex = params.source.indexOf("{", tableHeaderStart);
   if (tableOpenBraceIndex === -1) return params.source;
 
-  const tableCloseBraceIndex = findMatchingBraceIndex(params.source, tableOpenBraceIndex);
+  const tableCloseBraceIndex = findMatchingBraceIndex(
+    params.source,
+    tableOpenBraceIndex
+  );
   if (tableCloseBraceIndex === null) return params.source;
 
-  let tableBlock = params.source.slice(tableHeaderStart, tableCloseBraceIndex + 1);
+  let tableBlock = params.source.slice(
+    tableHeaderStart,
+    tableCloseBraceIndex + 1
+  );
 
   for (const typeName of ["Row", "Insert", "Update"]) {
     tableBlock = replaceNamedObjectBlock({
@@ -215,7 +233,9 @@ async function genTypes({
   return stdout;
 }
 
-function getTableCommentsFromRows(rows: TableCommentRow[]): Map<string, string> {
+function getTableCommentsFromRows(
+  rows: TableCommentRow[]
+): Map<string, string> {
   const comments = new Map<string, string>();
   for (const row of rows) {
     if (row.table_comment && row.table_comment.trim()) {
@@ -226,7 +246,9 @@ function getTableCommentsFromRows(rows: TableCommentRow[]): Map<string, string> 
   return comments;
 }
 
-function getColumnCommentsFromRows(rows: ColumnCommentRow[]): Map<string, Map<string, string>> {
+function getColumnCommentsFromRows(
+  rows: ColumnCommentRow[]
+): Map<string, Map<string, string>> {
   const comments = new Map<string, Map<string, string>>();
 
   for (const row of rows) {
@@ -399,74 +421,70 @@ async function fetchSchemaComments(params: {
   };
 }
 
-function requireEnv(key: string): string {
+const requireEnv = (key: string) => {
   const value = process.env[key];
 
-  if (!value) {
-    throw new Error(`Missing env var: ${key}`);
-  }
+  assert(value, `Missing env var: ${key}`);
 
   return value;
-}
+};
 
-async function main(): Promise<void> {
-  const options: GenerateOptions = {
-    projectId: requireEnv("SUPABASE_PROJECT_ID"),
-    schema: process.env.SUPABASE_SCHEMA ?? "public",
-    outFile: process.env.SUPABASE_TYPES_OUTFILE ?? "__generated__/supabase.ts",
-  };
+const options: GenerateOptions = {
+  projectId: requireEnv("SUPABASE_PROJECT_ID"),
+  schema: "public",
+  outFile: "__generated__/supabase.ts",
+};
 
-  const region = process.env.SUPABASE_REGION ?? "ap-northeast-2";
-  const prefer = (process.env.SUPABASE_DB_CONNECT_PREFER ?? "pooler") === "direct" ? "direct" : "pooler";
-  const password = requireEnv("SUPABASE_DB_PASSWORD");
+await mkdir("__generated__", { recursive: true });
 
-  await mkdir("__generated__", { recursive: true });
-
-  const typesSource = await genTypes(options);
-  const {
-    tableComments,
-    columnComments,
-    lastAttempt,
-    error,
-    failures,
-  } = await fetchSchemaComments({
+const typesSource = await genTypes(options);
+const { tableComments, columnComments, lastAttempt, error, failures } =
+  await fetchSchemaComments({
     schema: options.schema,
     projectId: options.projectId,
-    password,
-    region,
-    prefer,
+    password: requireEnv("SUPABASE_DB_PASSWORD"),
+    region: "ap-northeast-2",
+    prefer:
+      (process.env.SUPABASE_DB_CONNECT_PREFER ?? "pooler") === "direct"
+        ? "direct"
+        : "pooler",
   });
 
-  let output = typesSource;
+let output = typesSource;
 
-  for (const [tableName, tableComment] of tableComments) {
-    output = insertTableCommentJSDoc({ source: output, tableName, tableComment });
-  }
-
-  for (const [tableName, byColumn] of columnComments) {
-    output = insertColumnCommentsJSDoc({ source: output, tableName, columnComments: byColumn });
-  }
-
-  await Bun.write(options.outFile, output);
-
-  if (tableComments.size === 0 && columnComments.size === 0) {
-    const lines = ["No table/column comments applied."];
-    if (lastAttempt) lines.push(`Last attempt: ${lastAttempt}`);
-    if (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      lines.push(`Reason: ${message}`);
-    }
-
-    if (failures.length > 0) {
-      lines.push("Attempts:");
-      for (const failure of failures) {
-        const oneLine = failure.message.split("\n").join(" ").trim();
-        lines.push(`- ${failure.attempt}: ${oneLine}`);
-      }
-    }
-
-    console.warn(lines.join("\n"));
-  }
+for (const [tableName, tableComment] of tableComments) {
+  output = insertTableCommentJSDoc({
+    source: output,
+    tableName,
+    tableComment,
+  });
 }
 
-await main();
+for (const [tableName, byColumn] of columnComments) {
+  output = insertColumnCommentsJSDoc({
+    source: output,
+    tableName,
+    columnComments: byColumn,
+  });
+}
+
+await Bun.write(options.outFile, output);
+
+if (tableComments.size === 0 && columnComments.size === 0) {
+  const lines = ["No table/column comments applied."];
+  if (lastAttempt) lines.push(`Last attempt: ${lastAttempt}`);
+  if (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    lines.push(`Reason: ${message}`);
+  }
+
+  if (failures.length > 0) {
+    lines.push("Attempts:");
+    for (const failure of failures) {
+      const oneLine = failure.message.split("\n").join(" ").trim();
+      lines.push(`- ${failure.attempt}: ${oneLine}`);
+    }
+  }
+
+  console.warn(lines.join("\n"));
+}
