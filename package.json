@@ -8,7 +8,9 @@
     "lint": "bun --filter \"*\" lint",
     "lint:fix": "bun --filter \"*\" lint:fix",
     "test": "bun test",
-    "env:pull": "bun --filter @fantasy-diary/agent-server env:pull & bun --filter @fantasy-diary/web env:pull"
+    "supabase:migrate:prod-to-dev": "bun --filter @fantasy-diary/shared supabase:migrate:prod-to-dev",
+    "env:pull": "bun --filter @fantasy-diary/agent-server env:pull && bun --filter @fantasy-diary/web env:pull",
+    "gen:supabase": "bun --filter @fantasy-diary/shared gen:supabase"
   },
   "devDependencies": {
     "@types/bun": "^1.3.5",

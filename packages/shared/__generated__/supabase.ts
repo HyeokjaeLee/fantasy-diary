@@ -12,9 +12,8 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "13.0.4"
   }
-  public: {
+  dev: {
     Tables: {
-      /** @table characters: 소설에 등장하는 캐릭터 테이블 */
       characters: {
         Row: {
           /** @column characters.created_at: 생성 시간 */
@@ -70,17 +69,8 @@ export type Database = {
           /** @column characters.updated_at: 마지막 수정 시간 */
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "characters_novel_id_fkey"
-            columns: ["novel_id"]
-            isOneToOne: false
-            referencedRelation: "novels"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
-      /** @table episode_characters: 에피소드와 캐릭터의 연결 테이블 (조인 테이블) */
       episode_characters: {
         Row: {
           /** @column episode_characters.character_id: 캐릭터 ID */
@@ -118,24 +108,8 @@ export type Database = {
           /** @column episode_characters.updated_at: 마지막 수정 시간 */
           updated_at?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "episode_characters_character_id_fkey"
-            columns: ["character_id"]
-            isOneToOne: false
-            referencedRelation: "characters"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "episode_characters_episode_id_fkey"
-            columns: ["episode_id"]
-            isOneToOne: false
-            referencedRelation: "episodes"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
-      /** @table episode_locations: 에피소드와 장소의 연결 테이블 (조인 테이블) */
       episode_locations: {
         Row: {
           /** @column episode_locations.created_at: 생성 시간 */
@@ -173,24 +147,8 @@ export type Database = {
           /** @column episode_locations.updated_at: 마지막 수정 시간 */
           updated_at?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "episode_locations_episode_id_fkey"
-            columns: ["episode_id"]
-            isOneToOne: false
-            referencedRelation: "episodes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "episode_locations_location_id_fkey"
-            columns: ["location_id"]
-            isOneToOne: false
-            referencedRelation: "locations"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
-      /** @table episodes: 소설의 개별 에피소드 테이블 */
       episodes: {
         Row: {
           /** @column episodes.body: 에피소드 본문 */
@@ -246,17 +204,8 @@ export type Database = {
           /** @column episodes.updated_at: 마지막 수정 시간 */
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "episodes_novel_id_fkey"
-            columns: ["novel_id"]
-            isOneToOne: false
-            referencedRelation: "novels"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
-      /** @table locations: 소설에 등장하는 장소 테이블 */
       locations: {
         Row: {
           /** @column locations.created_at: 생성 시간 */
@@ -300,20 +249,11 @@ export type Database = {
           /** @column locations.updated_at: 마지막 수정 시간 */
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "locations_novel_id_fkey"
-            columns: ["novel_id"]
-            isOneToOne: false
-            referencedRelation: "novels"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
-      /** @table novels: 소설(시리즈) 메타데이터 루트 엔티티 */
       novels: {
         Row: {
-          /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 */
+          /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 (Markdown) */
           append_prompt: string | null
           /** @column novels.created_at: 소설 생성 시각 */
           created_at: string
@@ -321,13 +261,13 @@ export type Database = {
           genre: string
           /** @column novels.id: 소설 고유 ID (nanoid) */
           id: string
-          /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 */
+          /** @column novels.initial_plot_seeds: 초기 플롯 시드  (Markdown) */
           initial_plot_seeds: string | null
           /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
           plot_seeds_resolved: boolean | null
           /** @column novels.status: 소설 상태(기본값 'active') */
           status: string
-          /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블 */
+          /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블  (Markdown) */
           story_bible: string
           /** @column novels.title: 소설 제목 */
           title: string
@@ -335,7 +275,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
-          /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 */
+          /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 (Markdown) */
           append_prompt?: string | null
           /** @column novels.created_at: 소설 생성 시각 */
           created_at?: string
@@ -343,13 +283,13 @@ export type Database = {
           genre: string
           /** @column novels.id: 소설 고유 ID (nanoid) */
           id?: string
-          /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 */
+          /** @column novels.initial_plot_seeds: 초기 플롯 시드  (Markdown) */
           initial_plot_seeds?: string | null
           /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
           plot_seeds_resolved?: boolean | null
           /** @column novels.status: 소설 상태(기본값 'active') */
           status?: string
-          /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블 */
+          /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블  (Markdown) */
           story_bible?: string
           /** @column novels.title: 소설 제목 */
           title: string
@@ -357,7 +297,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
-          /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 */
+          /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 (Markdown) */
           append_prompt?: string | null
           /** @column novels.created_at: 소설 생성 시각 */
           created_at?: string
@@ -365,13 +305,13 @@ export type Database = {
           genre?: string
           /** @column novels.id: 소설 고유 ID (nanoid) */
           id?: string
-          /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 */
+          /** @column novels.initial_plot_seeds: 초기 플롯 시드  (Markdown) */
           initial_plot_seeds?: string | null
           /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
           plot_seeds_resolved?: boolean | null
           /** @column novels.status: 소설 상태(기본값 'active') */
           status?: string
-          /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블 */
+          /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블  (Markdown) */
           story_bible?: string
           /** @column novels.title: 소설 제목 */
           title?: string
@@ -385,17 +325,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      dearmor: { Args: { "": string }; Returns: string }
-      gen_random_uuid: { Args: never; Returns: string }
-      gen_salt: { Args: { "": string }; Returns: string }
-      nanoid: { Args: { size?: number }; Returns: string }
-      pgp_armor_headers: {
-        Args: { "": string }
-        Returns: Record<string, unknown>[]
-      }
+      [_ in never]: never
     }
     Enums: {
-      gender: "male" | "female"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -521,9 +454,7 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  public: {
-    Enums: {
-      gender: ["male", "female"],
-    },
+  dev: {
+    Enums: {},
   },
 } as const

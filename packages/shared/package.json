@@ -8,8 +8,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "bun x tsc --noEmit",
-    "supabase:types": "bun run ./scripts/generate-supabase-type.ts && bun run ./scripts/generate-supabase-zod.ts",
-    "supabase:zod": "bun run ./scripts/generate-supabase-zod.ts",
+    "gen:supabase": "bun run ./scripts/generate-supabase-type.ts && bun run ./scripts/generate-supabase-zod.ts",
+    "supabase:migrate:prod-to-dev": "bun run ./scripts/migrate-supabase-prod-to-dev.ts",
     "env:pull": "doppler secrets download --project shared --config dev --format env --no-file > .env"
   },
   "dependencies": {

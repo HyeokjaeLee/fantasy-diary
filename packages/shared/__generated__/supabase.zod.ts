@@ -6,11 +6,9 @@
 import { z } from "zod";
 
 export const publicEnums = {
-  gender: z.enum(["male", "female"]),
 } as const;
 
 export const publicTables = {
-  /** @table characters: 소설에 등장하는 캐릭터 테이블 */
   characters: {
     Row: z.object({
       /** @column characters.id: 캐릭터 고유 ID (NanoID) */
@@ -67,7 +65,6 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
-  /** @table episode_characters: 에피소드와 캐릭터의 연결 테이블 (조인 테이블) */
   episode_characters: {
     Row: z.object({
       /** @column episode_characters.id: 조인 레코드 고유 ID (NanoID) */
@@ -106,7 +103,6 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
     }).strict(),
   },
-  /** @table episode_locations: 에피소드와 장소의 연결 테이블 (조인 테이블) */
   episode_locations: {
     Row: z.object({
       /** @column episode_locations.id: 조인 레코드 고유 ID (NanoID) */
@@ -145,7 +141,6 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
     }).strict(),
   },
-  /** @table episodes: 소설의 개별 에피소드 테이블 */
   episodes: {
     Row: z.object({
       /** @column episodes.id: 에피소드 고유 ID (NanoID) */
@@ -202,7 +197,6 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
-  /** @table locations: 소설에 등장하는 장소 테이블 */
   locations: {
     Row: z.object({
       /** @column locations.id: 장소 고유 ID (NanoID) */
@@ -247,7 +241,6 @@ export const publicTables = {
       updated_at: z.iso.datetime({ offset: true }).optional(),
     }).strict(),
   },
-  /** @table novels: 소설(시리즈) 메타데이터 루트 엔티티 */
   novels: {
     Row: z.object({
       /** @column novels.id: 소설 고유 ID (nanoid) */
@@ -260,13 +253,13 @@ export const publicTables = {
       status: z.string(),
       /** @column novels.created_at: 소설 생성 시각 */
       created_at: z.iso.datetime({ offset: true }),
-      /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블 */
+      /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블  (Markdown) */
       story_bible: z.string(),
-      /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 */
+      /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 (Markdown) */
       append_prompt: z.string().nullable(),
       /** @column novels.updated_at: 소설 정보 마지막 수정 시각 */
       updated_at: z.iso.datetime({ offset: true }).nullable(),
-      /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 */
+      /** @column novels.initial_plot_seeds: 초기 플롯 시드  (Markdown) */
       initial_plot_seeds: z.string().nullable(),
       /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
       plot_seeds_resolved: z.boolean().nullable(),
@@ -282,13 +275,13 @@ export const publicTables = {
       status: z.string().optional(),
       /** @column novels.created_at: 소설 생성 시각 */
       created_at: z.iso.datetime({ offset: true }).optional(),
-      /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블 */
+      /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블  (Markdown) */
       story_bible: z.string().optional(),
-      /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 */
+      /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 (Markdown) */
       append_prompt: z.string().nullable().optional(),
       /** @column novels.updated_at: 소설 정보 마지막 수정 시각 */
       updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
-      /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 */
+      /** @column novels.initial_plot_seeds: 초기 플롯 시드  (Markdown) */
       initial_plot_seeds: z.string().nullable().optional(),
       /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
       plot_seeds_resolved: z.boolean().nullable().optional(),
@@ -304,13 +297,13 @@ export const publicTables = {
       status: z.string().optional(),
       /** @column novels.created_at: 소설 생성 시각 */
       created_at: z.iso.datetime({ offset: true }).optional(),
-      /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블 */
+      /** @column novels.story_bible: 소설 세계관, 설정, 톤앤매너 등 작품 전반의 바이블  (Markdown) */
       story_bible: z.string().optional(),
-      /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 */
+      /** @column novels.append_prompt: Writer Agent 실행 시 추가로 전달할 프롬프트 (Markdown) */
       append_prompt: z.string().nullable().optional(),
       /** @column novels.updated_at: 소설 정보 마지막 수정 시각 */
       updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
-      /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 */
+      /** @column novels.initial_plot_seeds: 초기 플롯 시드  (Markdown) */
       initial_plot_seeds: z.string().nullable().optional(),
       /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
       plot_seeds_resolved: z.boolean().nullable().optional(),

@@ -3,6 +3,8 @@ import { mkdir } from "node:fs/promises";
 import { SQL } from "bun";
 import { assert } from "es-toolkit/util";
 
+import { assertEnv } from "@/utils";
+
 type TableCommentRow = {
   table_name: string;
   table_comment: string | null;
@@ -430,8 +432,8 @@ const requireEnv = (key: string) => {
 };
 
 const options: GenerateOptions = {
-  projectId: requireEnv("SUPABASE_PROJECT_ID"),
-  schema: "public",
+  projectId: assertEnv("SUPABASE_PROJECT_ID"),
+  schema: assertEnv("SUPABASE_SCHEMA", ["public", "dev"]),
   outFile: "__generated__/supabase.ts",
 };
 
