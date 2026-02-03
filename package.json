@@ -4,16 +4,11 @@
   "scripts": {
     "preinstall": "syncpack fix-mismatches && syncpack format",
     "dev:agent-server": "bun --filter @fantasy-diary/agent-server dev",
-    "agent-server:run:daily": "bun run --cwd apps/agent-server run:daily",
-    "agent-server:run:daily:dry": "bun run --cwd apps/agent-server run:daily:dry",
-    "agent-server:deploy": "bun run --cwd apps/agent-server gcp:deploy",
-    "agent-server:gcp:build": "bun run --cwd apps/agent-server gcp:build",
-    "agent-server:gcp:run:daily": "bun run --cwd apps/agent-server gcp:run:daily",
-    "agent-server:gcp:scheduler:run": "bun run --cwd apps/agent-server gcp:scheduler:run",
     "build": "bun --filter \"*\" build",
     "lint": "bun --filter \"*\" lint",
     "lint:fix": "bun --filter \"*\" lint:fix",
-    "test": "bun test"
+    "test": "bun test",
+    "env:pull": "bun --filter @fantasy-diary/agent-server env:pull & bun --filter @fantasy-diary/web env:pull"
   },
   "devDependencies": {
     "@types/bun": "^1.3.5",

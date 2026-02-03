@@ -266,7 +266,7 @@ export const publicTables = {
       append_prompt: z.string().nullable(),
       /** @column novels.updated_at: 소설 정보 마지막 수정 시각 */
       updated_at: z.iso.datetime({ offset: true }).nullable(),
-      /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
+      /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 */
       initial_plot_seeds: z.string().nullable(),
       /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
       plot_seeds_resolved: z.boolean().nullable(),
@@ -288,7 +288,7 @@ export const publicTables = {
       append_prompt: z.string().nullable().optional(),
       /** @column novels.updated_at: 소설 정보 마지막 수정 시각 */
       updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
-      /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
+      /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 */
       initial_plot_seeds: z.string().nullable().optional(),
       /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
       plot_seeds_resolved: z.boolean().nullable().optional(),
@@ -310,7 +310,7 @@ export const publicTables = {
       append_prompt: z.string().nullable().optional(),
       /** @column novels.updated_at: 소설 정보 마지막 수정 시각 */
       updated_at: z.iso.datetime({ offset: true }).nullable().optional(),
-      /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 (JSON 배열 형식의 문자열) */
+      /** @column novels.initial_plot_seeds: 초기 플롯 시드 목록 */
       initial_plot_seeds: z.string().nullable().optional(),
       /** @column novels.plot_seeds_resolved: 초기 플롯 시드가 모두 회수되었는지 여부 */
       plot_seeds_resolved: z.boolean().nullable().optional(),
