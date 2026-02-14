@@ -1,0 +1,6 @@
+{
+  "setup": [
+    "bun install && bun run env:pull && bun run gen:supabase"
+  ],
+  "teardown": []
+}
