@@ -2,22 +2,15 @@
 
 :root {
   color-scheme: light;
-  --surface: #f7f3ea;
-  --surface-strong: #f1e8d8;
-  --ink: #12151b;
-  --ink-muted: #3a4152;
-  --ember: #c46a39;
-  --moss: #5a7b6a;
-  --ring: rgba(18, 21, 27, 0.1);
 }
 
 * {
-  border-color: rgba(18, 21, 27, 0.08);
+  border-color: #000000;
 }
 
 body {
-  background: radial-gradient(120% 120% at 20% 0%, #f7efe2 0%, #f6f2e9 40%, #f9f7f2 100%);
-  color: var(--ink);
+  background: #ffffff;
+  color: #000000;
 }
 
 @layer utilities {

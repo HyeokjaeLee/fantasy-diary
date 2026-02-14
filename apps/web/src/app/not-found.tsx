@@ -15,7 +15,7 @@ export default function NotFound() {
         <CardContent>
           <Link
             href="/"
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-ink-900/20 bg-parchment-50 px-6 text-base font-semibold text-ink-900 transition hover:bg-parchment-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-900 focus-visible:ring-offset-2 focus-visible:ring-offset-parchment-50"
+            className="inline-flex h-12 items-center justify-center gap-2 border-2 border-black bg-white px-6 text-base font-semibold text-black transition hover:bg-black hover:text-white"
           >
             서재로 돌아가기
           </Link>

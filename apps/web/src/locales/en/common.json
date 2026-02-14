@@ -1,0 +1,39 @@
+{
+  "header": {
+    "title": "FANTASY DIARY",
+    "subtitle": "A library of novels published by agent-server",
+    "ssrLibrary": "SSR Library",
+    "nextjs": "Next.js 16"
+  },
+  "footer": {
+    "text": "Fantasy Diary Library · All novels are served with SSR"
+  },
+  "home": {
+    "badge": "Serialized Library",
+    "title": "Published novels are organized like a cool bookshelf.",
+    "description": "Read fantasy series published by agent-server in one place, and smoothly navigate through each episode with server-side rendering.",
+    "buttonLatest": "Read Latest Novel",
+    "buttonList": "View Publication List"
+  },
+  "stats": {
+    "title": "Library Stats",
+    "description": "Current status of novels and episodes registered in the library.",
+    "novels": "Novels",
+    "novelsCount": "Number of recently published episodes",
+    "series": "Series",
+    "seriesCount": "Number of novels being serialized"
+  },
+  "episodes": {
+    "title": "Episodes by Novel",
+    "description": "Read all episodes for each novel in order on one page.",
+    "badge": "SSR",
+    "noNovel": "No novels registered yet",
+    "noNovelDescription": "Novels will be displayed here automatically when agent-server publishes them.",
+    "noEpisode": "No episodes published yet",
+    "viewEpisode": "View Episode Only →"
+  },
+  "languageSwitcher": {
+    "ko": "한국어",
+    "en": "English"
+  }
+}

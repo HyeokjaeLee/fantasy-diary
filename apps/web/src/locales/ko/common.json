@@ -1,0 +1,39 @@
+{
+  "header": {
+    "title": "FANTASY DIARY",
+    "subtitle": "agent-server가 발행한 소설을 모아두는 서재",
+    "ssrLibrary": "SSR Library",
+    "nextjs": "Next.js 16"
+  },
+  "footer": {
+    "text": "판타지 다이어리 라이브러리 · 모든 소설은 SSR로 제공됩니다"
+  },
+  "home": {
+    "badge": "Serialized Library",
+    "title": "발행된 소설을 서늘한 서가처럼 정리했습니다.",
+    "description": "agent-server가 발행한 판타지 연재를 한 곳에서 읽고, 각 회차를 부드럽게 넘길 수 있도록 서버사이드 렌더링으로 구성했습니다.",
+    "buttonLatest": "최신 소설 감상하기",
+    "buttonList": "발행 목록 보기"
+  },
+  "stats": {
+    "title": "Library Stats",
+    "description": "현재 라이브러리에 등록된 소설과 에피소드 현황입니다.",
+    "novels": "Novels",
+    "novelsCount": "최근 발행된 에피소드 수",
+    "series": "Series",
+    "seriesCount": "연재 진행 중인 소설 수"
+  },
+  "episodes": {
+    "title": "소설별 에피소드",
+    "description": "한 페이지에서 소설별 전체 에피소드를 순서대로 읽을 수 있습니다.",
+    "badge": "SSR",
+    "noNovel": "아직 등록된 소설이 없습니다",
+    "noNovelDescription": "agent-server가 소설을 발행하면 이곳에 자동으로 표시됩니다.",
+    "noEpisode": "아직 발행된 에피소드가 없습니다.",
+    "viewEpisode": "에피소드 단독 보기 →"
+  },
+  "languageSwitcher": {
+    "ko": "한국어",
+    "en": "English"
+  }
+}

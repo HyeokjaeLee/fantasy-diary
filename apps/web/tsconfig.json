@@ -9,7 +9,7 @@
     ],
     "jsx": "preserve",
     "paths": {
-      "@/*": ["./src/*"],
+      "@/*": ["./src/*", "../../packages/shared/*"],
       "@fantasy-diary/*": ["../../packages/*"]
     }
   },

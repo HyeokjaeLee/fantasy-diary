@@ -24,11 +24,11 @@ export default async function EpisodeDetailPage({ params }: EpisodeDetailPagePro
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="moss">Episode {episode.episode_number}</Badge>
-            <Badge variant="stone">Novel {episode.novel_id.slice(0, 8)}</Badge>
+            <Badge>Episode {episode.episode_number}</Badge>
+            <Badge>Novel {episode.novel_id.slice(0, 8)}</Badge>
           </div>
-          <h1 className="font-display text-4xl text-ink-950 md:text-5xl">발행된 에피소드</h1>
-          <p className="text-sm text-ink-700">
+          <h1 className="font-display text-4xl text-black md:text-5xl">발행된 에피소드</h1>
+          <p className="text-sm text-black">
             {new Date(episode.created_at).toLocaleDateString('ko-KR', {
               year: 'numeric',
               month: 'long',
@@ -38,7 +38,7 @@ export default async function EpisodeDetailPage({ params }: EpisodeDetailPagePro
         </div>
         <Link
           href="/"
-          className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-ink-900/20 bg-parchment-50 px-6 text-base font-semibold text-ink-900 transition hover:bg-parchment-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-900 focus-visible:ring-offset-2 focus-visible:ring-offset-parchment-50"
+          className="inline-flex h-12 items-center justify-center gap-2 border-2 border-black bg-white px-6 text-base font-semibold text-black transition hover:bg-black hover:text-white"
         >
           서재로 돌아가기
         </Link>
@@ -51,7 +51,7 @@ export default async function EpisodeDetailPage({ params }: EpisodeDetailPagePro
             <CardDescription>발행된 회차의 본문을 확인하세요.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="whitespace-pre-line text-sm leading-7 text-ink-700">
+            <p className="whitespace-pre-line text-sm leading-7 text-black">
               {episode.body}
             </p>
           </CardContent>
