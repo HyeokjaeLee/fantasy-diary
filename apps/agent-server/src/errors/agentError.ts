@@ -43,6 +43,9 @@ const guidanceByTypeAndCode = {
     INVALID_ARGUMENT: {
       description: "An argument value was invalid.",
     },
+    NOT_SUPPORTED: {
+      description: "Operation not supported by this provider.",
+    },
   },
   PARSE_ERROR: {
     INVALID_JSON: {
@@ -64,6 +67,10 @@ const guidanceByTypeAndCode = {
     GEMINI_EMBED_FAILED: {
       description: "Gemini embedding request failed.",
       suggestedFix: "Retry with backoff; if persistent, reduce input length.",
+    },
+    GLM_API_ERROR: {
+      description: "GLM API request failed.",
+      suggestedFix: "Check API key and model name; retry with backoff.",
     },
   },
   DATABASE_ERROR: {

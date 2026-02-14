@@ -1,11 +1,11 @@
-import { z } from "zod";
+import { z } from 'zod';
 
-import { generateJson } from "../lib/genai";
+import type { LLMAdapter } from '../lib/llm';
 import {
   loadReviewerPromptTemplate,
   loadReviewerSystemPrompt,
-} from "../lib/prompts";
-import type { EpisodeRow, NovelRow } from "../repositories/novelRepository";
+} from '../lib/prompts';
+import type { EpisodeRow, NovelRow } from '../repositories/novelRepository';
 
 const ReviewerSchema = z
   .object({
@@ -51,7 +51,7 @@ function formatEpisodeContext(episodes: EpisodeRow[]): string {
 
 export class ReviewerAgent {
   constructor(
-    private readonly client: import("@google/genai").GoogleGenAI,
+    private readonly adapter: LLMAdapter,
     private readonly model: string
   ) {}
 
@@ -60,19 +60,19 @@ export class ReviewerAgent {
 
     const promptTemplate = loadReviewerPromptTemplate();
     const prompt = promptTemplate
-      .replace("${title}", input.novel.title)
-      .replace("${storyBible}", input.novel.story_bible)
-      .replace("${initialPlotSeeds}", input.initialPlotSeeds ?? "(none)")
-      .replace("${previousEpisodes}", formatEpisodeContext(input.episodes))
-      .replace("${draftBody}", input.draftBody);
+      .replace('${title}', input.novel.title)
+      .replace('${storyBible}', input.novel.story_bible)
+      .replace('${initialPlotSeeds}', input.initialPlotSeeds ?? '(none)')
+      .replace('${previousEpisodes}', formatEpisodeContext(input.episodes))
+      .replace('${draftBody}', input.draftBody);
 
-    return generateJson(this.client, {
+    return this.adapter.generateJson({
       model: this.model,
       systemInstruction,
       prompt,
       schema: ReviewerSchema,
       temperature: 0.3,
-      maxOutputTokens: 900,
+      maxOutputTokens: 4096,
     });
   }
 }

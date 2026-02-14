@@ -1,17 +1,17 @@
-import { z } from "zod";
+import { z } from 'zod';
 
-import { generateJson } from "../lib/genai";
+import type { LLMAdapter } from '../lib/llm';
 import {
   loadInitialPlotSeeds,
   loadWriterPromptTemplate,
   loadWriterSystemPrompt,
-} from "../lib/prompts";
+} from '../lib/prompts';
 import type {
   CharacterRow,
   EpisodeRow,
   LocationRow,
   NovelRow,
-} from "../repositories/novelRepository";
+} from '../repositories/novelRepository';
 
 const WriterSchema = z.object({
   body: z.string().min(500).max(700),
@@ -87,38 +87,38 @@ function formatLocations(locations: LocationRow[]): string {
 
 export class WriterAgent {
   constructor(
-    private readonly client: import("@google/genai").GoogleGenAI,
+    private readonly adapter: LLMAdapter,
     private readonly model: string
   ) {}
 
   async generate(input: WriterInput): Promise<WriterResult> {
     const systemInstruction = loadWriterSystemPrompt();
 
-    let initialPlotSeedsSection = "";
+    let initialPlotSeedsSection = '';
     if (input.initialPlotSeeds) {
-      initialPlotSeedsSection = loadInitialPlotSeeds().replace("${initialPlotSeeds}", input.initialPlotSeeds);
+      initialPlotSeedsSection = loadInitialPlotSeeds().replace('${initialPlotSeeds}', input.initialPlotSeeds);
     }
 
     const promptTemplate = loadWriterPromptTemplate();
     const prompt = promptTemplate
-      .replace("${title}", input.novel.title)
-      .replace("${genre}", input.novel.genre)
-      .replace("${episodeNumber}", String(input.episodeNumber))
-      .replace("${storyBible}", input.novel.story_bible)
-      .replace("${appendPrompt}", input.novel.append_prompt ?? "(없음)")
-      .replace("${initialPlotSeeds}", initialPlotSeedsSection)
-      .replace("${characters}", formatCharacters(input.characters))
-      .replace("${locations}", formatLocations(input.locations))
-      .replace("${recentEpisodes}", formatEpisodeContext(input.episodes))
-      .replace("${feedback}", input.feedback ?? "");
+      .replace('${title}', input.novel.title)
+      .replace('${genre}', input.novel.genre)
+      .replace('${episodeNumber}', String(input.episodeNumber))
+      .replace('${storyBible}', input.novel.story_bible)
+      .replace('${appendPrompt}', input.novel.append_prompt ?? '(없음)')
+      .replace('${initialPlotSeeds}', initialPlotSeedsSection)
+      .replace('${characters}', formatCharacters(input.characters))
+      .replace('${locations}', formatLocations(input.locations))
+      .replace('${recentEpisodes}', formatEpisodeContext(input.episodes))
+      .replace('${feedback}', input.feedback ?? '');
 
-    return generateJson(this.client, {
+    return this.adapter.generateJson({
       model: this.model,
       systemInstruction,
       prompt,
       schema: WriterSchema,
       temperature: 0.7,
-      maxOutputTokens: 2500,
+      maxOutputTokens: 8192,
     });
   }
 }
