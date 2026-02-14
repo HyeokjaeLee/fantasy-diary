@@ -1,9 +1,10 @@
-import { createSupabaseAdminClient } from "@fantasy-diary/shared/supabase";
+import { createSupabaseAdminClient } from '@fantasy-diary/shared/supabase';
 
-import { ReviewerAgent } from "../agents/reviewerAgent";
-import { WriterAgent, type WriterResult } from "../agents/writerAgent";
-import { AgentError } from "../errors/agentError";
-import { createGenAIClient, embedText } from "../lib/genai";
+import { ReviewerAgent } from '../agents/reviewerAgent';
+import { WriterAgent, type WriterResult } from '../agents/writerAgent';
+import { AgentError } from '../errors/agentError';
+import { createLLMAdapter, getDefaultModel } from '../lib/llm';
+import { createGeminiAdapter } from '../lib/llm/gemini';
 import {
   type CharacterInsert,
   type EpisodeRow,
@@ -19,7 +20,7 @@ import {
   upsertEpisodeCharacters,
   upsertEpisodeLocations,
   upsertLocations,
-} from "../repositories/novelRepository";
+} from '../repositories/novelRepository';
 
 type WorkflowOptions = {
   novelId: string;
@@ -34,12 +35,7 @@ type WorkflowResult = {
 
 const DEFAULT_REVIEW_LOOPS = 7;
 const DEFAULT_RAG_COUNT = 2;
-const DEFAULT_MODEL = "gemini-3-flash-preview";
-const DEFAULT_EMBEDDING_MODEL = "text-embedding-004";
-
-function getModelFromEnv(): string {
-  return process.env.GEMINI_MODEL ?? DEFAULT_MODEL;
-}
+const DEFAULT_EMBEDDING_MODEL = 'gemini-embedding-001';
 
 function getEmbeddingModelFromEnv(): string {
   return process.env.GEMINI_EMBEDDING_MODEL ?? DEFAULT_EMBEDDING_MODEL;
@@ -132,10 +128,11 @@ export async function generateEpisodeWorkflow(
 
   const initialPlotSeeds = formatInitialPlotSeeds(novel);
 
-  const model = getModelFromEnv();
-  const aiClient = createGenAIClient();
-  const writer = new WriterAgent(aiClient, model);
-  const reviewer = new ReviewerAgent(aiClient, model);
+  const model = getDefaultModel();
+  const llmAdapter = createLLMAdapter();
+  const embeddingAdapter = createGeminiAdapter();
+  const writer = new WriterAgent(llmAdapter, model);
+  const reviewer = new ReviewerAgent(llmAdapter, model);
   const reviewLoops = options.maxReviewLoops ?? DEFAULT_REVIEW_LOOPS;
 
   let feedback: string | undefined;
@@ -144,6 +141,11 @@ export async function generateEpisodeWorkflow(
   let writerOutput: WriterResult | null = null;
 
   for (let attempt = 0; attempt < reviewLoops; attempt += 1) {
+    console.error(`\n[Loop ${attempt + 1}/${reviewLoops}] Starting writer generation...`);
+    if (feedback) {
+      console.error(`[Loop ${attempt + 1}] Previous feedback: ${feedback.slice(0, 200)}...`);
+    }
+    
     try {
       writerOutput = await writer.generate({
         novel,
@@ -154,23 +156,29 @@ export async function generateEpisodeWorkflow(
         feedback,
         initialPlotSeeds,
       });
+      console.error(`[Loop ${attempt + 1}] Writer SUCCESS: body length = ${writerOutput.body.length}`);
     } catch (error) {
       if (error instanceof AgentError) {
         feedback = sanitizeFeedback(error);
         lastWriterFeedback = feedback;
+        console.error(`[Loop ${attempt + 1}] Writer FAILED: ${error.type}.${error.code} - ${error.message}`);
         continue;
       }
       throw error;
     }
 
+    console.error(`[Loop ${attempt + 1}] Starting reviewer...`);
     const review = await reviewer.review({
       novel,
       episodes,
       draftBody: writerOutput.body,
       initialPlotSeeds,
     });
+    
+    console.error(`[Loop ${attempt + 1}] Reviewer result: approved=${review.approved}${review.feedback ? `, feedback=${review.feedback.slice(0, 100)}...` : ''}`);
 
     if (review.approved) {
+      console.error(`[Loop ${attempt + 1}] APPROVED! Saving episode...`);
       if (review.plotSeedsResolved && !novel.plot_seeds_resolved) {
         await updateNovel(client, novel.id, { plot_seeds_resolved: true });
       }
@@ -195,7 +203,7 @@ export async function generateEpisodeWorkflow(
     });
   }
 
-  const embedding = await embedText(aiClient, {
+  const embedding = await embeddingAdapter.embedText({
     model: getEmbeddingModelFromEnv(),
     text: writerOutput.body,
   });
