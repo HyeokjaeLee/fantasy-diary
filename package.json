@@ -9,7 +9,7 @@
     "lint:fix": "bun --filter \"*\" lint:fix",
     "test": "bun test",
     "supabase:migrate:prod-to-dev": "bun --filter @fantasy-diary/shared supabase:migrate:prod-to-dev",
-    "env:pull": "bun --filter @fantasy-diary/agent-server env:pull & bun --filter @fantasy-diary/web env:pull & bun --filter @fantasy-diary/shared env:pull",
+    "env:pull": "bun --filter @fantasy-diary/agent-server env:pull && bun --filter @fantasy-diary/web env:pull && bun --filter @fantasy-diary/shared env:pull",
     "gen:supabase": "bun --filter @fantasy-diary/shared gen:supabase"
   },
   "devDependencies": {
