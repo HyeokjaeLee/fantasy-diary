@@ -10,6 +10,8 @@ brew install dopplerhq/cli/doppler
 
 doppler login
 
+superbase cli 설치되어있어야함
+
 Google cloud MCP를 활용해서 배포환경을 핸들링하려면
 brew install python@3.13 (google-cloud-sdk가 사용함)
 brew install --cask google-cloud-sdk
