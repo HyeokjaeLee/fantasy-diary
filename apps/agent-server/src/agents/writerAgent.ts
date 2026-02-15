@@ -14,25 +14,27 @@ import type {
 } from '../repositories/novelRepository';
 
 const WriterSchema = z.object({
-  body: z.string().min(500).max(700),
+  body: z.string().min(500).max(700).describe('소설 본문 (500~700자)'),
   newCharacters: z
     .array(
       z.object({
-        name: z.string().min(1),
-        traits: z.string().optional(),
-        personality: z.string().optional(),
-        description: z.string().optional(),
+        name: z.string().min(1).describe('캐릭터 이름'),
+        traits: z.string().optional().describe('캐릭터 특성'),
+        personality: z.string().optional().describe('캐릭터 성격'),
+        description: z.string().optional().describe('캐릭터 외모/설명'),
       })
     )
-    .optional(),
+    .default([])
+    .describe('이번 에피소드에서 처음 등장하는 새로운 캐릭터 목록. 기존 캐릭터 목록에 없는 인물이 등장하면 반드시 추가하십시오.'),
   newLocations: z
     .array(
       z.object({
-        name: z.string().min(1),
-        description: z.string().optional(),
+        name: z.string().min(1).describe('장소 이름'),
+        description: z.string().optional().describe('장소 설명'),
       })
     )
-    .optional(),
+    .default([])
+    .describe('이번 에피소드에서 처음 등장하는 새로운 장소 목록. 기존 장소 목록에 없는 장소가 등장하면 반드시 추가하십시오.'),
 });
 
 export type WriterResult = z.infer<typeof WriterSchema>;

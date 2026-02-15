@@ -156,7 +156,7 @@ export async function generateEpisodeWorkflow(
         feedback,
         initialPlotSeeds,
       });
-      console.error(`[Loop ${attempt + 1}] Writer SUCCESS: body length = ${writerOutput.body.length}`);
+      console.error(`[Loop ${attempt + 1}] Writer SUCCESS: body length = ${writerOutput.body.length}, newCharacters = ${JSON.stringify(writerOutput.newCharacters)}, newLocations = ${JSON.stringify(writerOutput.newLocations)}`);
     } catch (error) {
       if (error instanceof AgentError) {
         feedback = sanitizeFeedback(error);
@@ -173,15 +173,22 @@ export async function generateEpisodeWorkflow(
       episodes,
       draftBody: writerOutput.body,
       initialPlotSeeds,
+      existingCharacters: characters,
+      existingLocations: locations,
     });
     
-    console.error(`[Loop ${attempt + 1}] Reviewer result: approved=${review.approved}${review.feedback ? `, feedback=${review.feedback.slice(0, 100)}...` : ''}`);
+    console.error(`[Loop ${attempt + 1}] Reviewer result: approved=${review.approved}, newCharacters=${JSON.stringify(review.newCharacters)}, newLocations=${JSON.stringify(review.newLocations)}${review.feedback ? `, feedback=${review.feedback.slice(0, 100)}...` : ''}`);
 
     if (review.approved) {
       console.error(`[Loop ${attempt + 1}] APPROVED! Saving episode...`);
       if (review.plotSeedsResolved && !novel.plot_seeds_resolved) {
         await updateNovel(client, novel.id, { plot_seeds_resolved: true });
       }
+      writerOutput = {
+        ...writerOutput,
+        newCharacters: review.newCharacters,
+        newLocations: review.newLocations,
+      };
       break;
     }
 
@@ -216,13 +223,22 @@ export async function generateEpisodeWorkflow(
     embedding_model: embedding ? getEmbeddingModelFromEnv() : null,
   });
 
+  console.error(`[DB] Episode saved: ${episode.id}`);
+
   const newCharacters = buildCharacterInsert(novel, writerOutput.newCharacters);
   const newLocations = buildLocationInsert(novel, writerOutput.newLocations);
+
+  console.error(`[DB] Inserting ${newCharacters.length} characters, ${newLocations.length} locations...`);
+  console.error(`[DB] newCharacters: ${JSON.stringify(newCharacters)}`);
+  console.error(`[DB] newLocations: ${JSON.stringify(newLocations)}`);
 
   const [savedCharacters, savedLocations] = await Promise.all([
     upsertCharacters(client, newCharacters),
     upsertLocations(client, newLocations),
   ]);
+
+  console.error(`[DB] Saved ${savedCharacters.length} characters: ${JSON.stringify(savedCharacters.map(c => c.id))}`);
+  console.error(`[DB] Saved ${savedLocations.length} locations: ${JSON.stringify(savedLocations.map(l => ({ id: l.id, name: l.name })))}`);
 
   await Promise.all([
     upsertEpisodeCharacters(

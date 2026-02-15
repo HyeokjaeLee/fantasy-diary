@@ -1,9 +1,9 @@
-import { AgentError } from '../../errors/agentError';
-import { withExponentialBackoff } from '../backoff';
-import type { EmbedTextParams, GenerateJsonParams, LLMAdapter } from './types';
-import { resolveUpstreamError } from './types';
+import { AgentError } from "../../errors/agentError";
+import { withExponentialBackoff } from "../backoff";
+import type { EmbedTextParams, GenerateJsonParams, LLMAdapter } from "./types";
+import { resolveUpstreamError } from "./types";
 
-const GLM_API_BASE_URL = 'https://api.z.ai/api/coding/paas/v4';
+const GLM_API_BASE_URL = "https://api.z.ai/api/coding/paas/v4";
 
 const DEFAULT_RETRY_OPTIONS = {
   retries: 3,
@@ -15,9 +15,9 @@ const DEFAULT_RETRY_OPTIONS = {
 function shouldRetryGLM(
   error: unknown,
   attempt: number,
-  retries: number
+  retries: number,
 ): boolean {
-  const normalized = resolveUpstreamError(error, 'glm');
+  const normalized = resolveUpstreamError(error, "glm");
   if (!normalized.retryable) return false;
 
   return attempt < retries;
@@ -27,8 +27,8 @@ function parseJsonOrThrow(rawText: string): unknown {
   try {
     return JSON.parse(rawText);
   } catch (error) {
-    const firstBrace = rawText.indexOf('{');
-    const lastBrace = rawText.lastIndexOf('}');
+    const firstBrace = rawText.indexOf("{");
+    const lastBrace = rawText.lastIndexOf("}");
 
     if (firstBrace !== -1 && lastBrace > firstBrace) {
       const sliced = rawText.slice(firstBrace, lastBrace + 1);
@@ -40,9 +40,9 @@ function parseJsonOrThrow(rawText: string): unknown {
     }
 
     throw new AgentError({
-      type: 'PARSE_ERROR',
-      code: 'INVALID_JSON',
-      message: 'Model output is not valid JSON',
+      type: "PARSE_ERROR",
+      code: "INVALID_JSON",
+      message: "Model output is not valid JSON",
       details: {
         raw_text: rawText,
       },
@@ -52,7 +52,7 @@ function parseJsonOrThrow(rawText: string): unknown {
 }
 
 type GLMChatMessage = {
-  role: 'system' | 'user' | 'assistant';
+  role: "system" | "user" | "assistant";
   content: string;
 };
 
@@ -73,17 +73,14 @@ type GLMChatResponse = {
 };
 
 export class GLMAdapter implements LLMAdapter {
-  readonly provider = 'glm' as const;
+  readonly provider = "glm" as const;
 
   constructor(
     private readonly apiKey: string,
-    private readonly baseUrl: string = GLM_API_BASE_URL
+    private readonly baseUrl: string = GLM_API_BASE_URL,
   ) {}
 
-  static fromApiKey(
-    apiKey: string,
-    baseUrl?: string
-  ): GLMAdapter {
+  static fromApiKey(apiKey: string, baseUrl?: string): GLMAdapter {
     return new GLMAdapter(apiKey, baseUrl);
   }
 
@@ -93,8 +90,8 @@ export class GLMAdapter implements LLMAdapter {
     options?: {
       temperature?: number;
       maxTokens?: number;
-      responseFormat?: { type: 'json_object' };
-    }
+      responseFormat?: { type: "json_object" };
+    },
   ): Promise<GLMChatResponse> {
     const response = await withExponentialBackoff(
       async () => {
@@ -103,9 +100,9 @@ export class GLMAdapter implements LLMAdapter {
 
         try {
           const res = await fetch(`${this.baseUrl}/chat/completions`, {
-            method: 'POST',
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
+              "Content-Type": "application/json",
               Authorization: `Bearer ${this.apiKey}`,
             },
             body: JSON.stringify({
@@ -113,16 +110,16 @@ export class GLMAdapter implements LLMAdapter {
               messages,
               temperature: options?.temperature,
               response_format: options?.responseFormat,
-              thinking: { type: 'enabled' },
+              thinking: { type: "enabled" },
             }),
             signal: controller.signal,
           });
 
           if (!res.ok) {
-            const errorText = await res.text().catch(() => 'Unknown error');
+            const errorText = await res.text().catch(() => "Unknown error");
             throw new AgentError({
-              type: 'UPSTREAM_API_ERROR',
-              code: 'GLM_API_ERROR',
+              type: "UPSTREAM_API_ERROR",
+              code: "GLM_API_ERROR",
               message: `GLM API error: ${res.status} ${res.statusText} - ${errorText}`,
               retryable: res.status === 429 || res.status >= 500,
             });
@@ -135,9 +132,9 @@ export class GLMAdapter implements LLMAdapter {
       },
       DEFAULT_RETRY_OPTIONS,
       (error, context) =>
-        shouldRetryGLM(error, context.attempt, context.retries)
+        shouldRetryGLM(error, context.attempt, context.retries),
     ).catch((error) => {
-      throw resolveUpstreamError(error, 'glm');
+      throw resolveUpstreamError(error, "glm");
     });
 
     return response;
@@ -154,15 +151,19 @@ export class GLMAdapter implements LLMAdapter {
 IMPORTANT: You must respond with a JSON object that exactly matches this schema:
 ${schemaJson}
 
-Do not add any fields not in the schema. Do not change field names.`;
+CRITICAL REQUIREMENTS:
+- Include ALL fields from the schema, even if they are empty arrays []
+- Do NOT omit any field from the schema
+- Do not add any fields not in the schema
+- Do not change field names`;
 
     const messages: GLMChatMessage[] = [
       {
-        role: 'system',
+        role: "system",
         content: systemWithSchema,
       },
       {
-        role: 'user',
+        role: "user",
         content: params.prompt,
       },
     ];
@@ -174,32 +175,43 @@ Do not add any fields not in the schema. Do not change field names.`;
           : [
               ...messages,
               {
-                role: 'user' as const,
+                role: "user" as const,
                 content:
-                  'Return only complete, valid JSON. Do not truncate the response.',
+                  "Return only complete, valid JSON. Do not truncate the response.",
               },
             ];
 
-      const response = await this.chatCompletion(params.model, attemptMessages, {
-        temperature: params.temperature,
-        maxTokens: params.maxOutputTokens,
-        responseFormat: { type: 'json_object' },
-      });
+      const response = await this.chatCompletion(
+        params.model,
+        attemptMessages,
+        {
+          temperature: params.temperature,
+          maxTokens: params.maxOutputTokens,
+          responseFormat: { type: "json_object" },
+        },
+      );
 
-      let rawText = response.choices[0]?.message?.content ?? '';
+      let rawText = response.choices[0]?.message?.content ?? "";
       const reasoningContent = response.choices[0]?.message?.reasoning_content;
-      
-      console.error(`[GLM] finish_reason=${response.choices[0]?.finish_reason}, content_length=${rawText.length}, reasoning_length=${reasoningContent?.length ?? 0}`);
-      
+
+      console.error(
+        `[GLM] finish_reason=${response.choices[0]?.finish_reason}, content_length=${rawText.length}, reasoning_length=${reasoningContent?.length ?? 0}`,
+      );
+      console.error(`[GLM] raw_content: ${rawText.slice(0, 500)}`);
+
       if (!rawText && reasoningContent) {
-        console.error(`[GLM] WARNING: content is empty but reasoning exists. Extracting JSON from reasoning...`);
+        console.error(
+          `[GLM] WARNING: content is empty but reasoning exists. Extracting JSON from reasoning...`,
+        );
         const jsonMatch = reasoningContent.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           rawText = jsonMatch[0];
-          console.error(`[GLM] Extracted JSON from reasoning: ${rawText.slice(0, 100)}...`);
+          console.error(
+            `[GLM] Extracted JSON from reasoning: ${rawText.slice(0, 100)}...`,
+          );
         }
       }
-      
+
       try {
         const json = parseJsonOrThrow(rawText);
 
@@ -209,9 +221,9 @@ Do not add any fields not in the schema. Do not change field names.`;
           lastError = error;
         } else {
           lastError = new AgentError({
-            type: 'PARSE_ERROR',
-            code: 'INVALID_SHAPE',
-            message: 'Model output JSON did not match schema',
+            type: "PARSE_ERROR",
+            code: "INVALID_SHAPE",
+            message: "Model output JSON did not match schema",
             details: {
               raw_text: rawText,
             },
@@ -223,29 +235,29 @@ Do not add any fields not in the schema. Do not change field names.`;
 
     if (lastError) throw lastError;
     throw new AgentError({
-      type: 'PARSE_ERROR',
-      code: 'INVALID_JSON',
-      message: 'Model output is not valid JSON',
+      type: "PARSE_ERROR",
+      code: "INVALID_JSON",
+      message: "Model output is not valid JSON",
     });
   }
 
   async embedText(_params: EmbedTextParams): Promise<number[] | null> {
     throw new AgentError({
-      type: 'VALIDATION_ERROR',
-      code: 'NOT_SUPPORTED',
+      type: "VALIDATION_ERROR",
+      code: "NOT_SUPPORTED",
       message:
-        'GLM adapter does not support embedding. Use Gemini for embeddings.',
+        "GLM adapter does not support embedding. Use Gemini for embeddings.",
     });
   }
 }
 
 export function createGLMAdapter(): GLMAdapter {
-  const apiKey = process.env.GLM_API_KEY;
+  const apiKey = process.env.Z_AI_API_KEY;
   if (!apiKey) {
     throw new AgentError({
-      type: 'VALIDATION_ERROR',
-      code: 'REQUIRED',
-      message: 'Missing required env: GLM_API_KEY',
+      type: "VALIDATION_ERROR",
+      code: "REQUIRED",
+      message: "Missing required env: Z_AI_API_KEY",
     });
   }
 
