@@ -9,11 +9,22 @@
 - 낮/밤 장면 동시 존재 및 역할 분리(낮=선택/가면, 밤=실행/대가).
 - 플롯 시드 단서가 현장 장치/행동 선택/실물 단서로 최소 1개 포함되는지.
 
+[newCharacters / newLocations 필수 체크]:
+- 초안에 등장하는 인물이 아래 "기존 캐릭터" 목록에 없으면 newCharacters에 추가하십시오.
+- 초안에 등장하는 장소가 아래 "기존 장소" 목록에 없으면 newLocations에 추가하십시오.
+- 승인 여부와 관계없이 초안에서 발견한 새 인물/장소를 반환하십시오.
+
 스토리 바이블:
 ${storyBible}
 
 초기 플롯 시드(참조):
 ${initialPlotSeeds}
+
+기존 캐릭터:
+${existingCharacters}
+
+기존 장소:
+${existingLocations}
 
 이전 에피소드:
 ${previousEpisodes}

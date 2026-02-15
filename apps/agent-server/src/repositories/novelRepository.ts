@@ -140,12 +140,38 @@ export async function upsertLocations(
 ): Promise<LocationRow[]> {
   if (inputs.length === 0) return [];
 
-  const response = await client
-    .from("locations")
-    .upsert(inputs, { onConflict: "novel_id,name" })
-    .select("*");
+  const results: LocationRow[] = [];
 
-  return ensureArray(response, "INSERT_FAILED", "Failed to upsert locations");
+  for (const input of inputs) {
+    const existing = await client
+      .from("locations")
+      .select("*")
+      .eq("novel_id", input.novel_id)
+      .eq("name", input.name)
+      .maybeSingle();
+
+    if (existing.data) {
+      results.push(existing.data);
+    } else {
+      const inserted = await client
+        .from("locations")
+        .insert(input)
+        .select("*")
+        .maybeSingle();
+
+      if (inserted.data) {
+        results.push(inserted.data);
+      } else if (inserted.error) {
+        throw new AgentError({
+          type: "DATABASE_ERROR",
+          code: "INSERT_FAILED",
+          message: `Failed to insert location: ${inserted.error.message}`,
+        });
+      }
+    }
+  }
+
+  return results;
 }
 
 export async function upsertEpisodeCharacters(
